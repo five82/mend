@@ -1,0 +1,67 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from mend import cli
+
+
+class ResolveSourceTest(unittest.TestCase):
+    def test_resolves_unique_spindle_fingerprint_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            cache = Path(temp) / "spindle" / "rips"
+            expected = cache / ("a" * 64)
+            expected.mkdir(parents=True)
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": temp}):
+                self.assertEqual(cli.resolve_source("a" * 12), expected)
+
+    def test_rejects_ambiguous_fingerprint_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            cache = Path(temp) / "spindle" / "rips"
+            (cache / "abc1").mkdir(parents=True)
+            (cache / "abc2").mkdir()
+            with (
+                patch.dict(os.environ, {"XDG_CACHE_HOME": temp}),
+                self.assertRaisesRegex(ValueError, "ambiguous"),
+            ):
+                cli.resolve_source("abc")
+
+
+class SourceFilesTest(unittest.TestCase):
+    def test_lists_only_top_level_mkvs_in_name_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "b.mkv").touch()
+            (root / "a.mkv").touch()
+            (root / "metadata.json").touch()
+            self.assertEqual(
+                [path.name for path in cli.source_files(root)], ["a.mkv", "b.mkv"]
+            )
+
+    def test_requires_title_when_directory_has_multiple_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "a.mkv").touch()
+            (root / "b.mkv").touch()
+            with self.assertRaisesRegex(ValueError, "--title is required"):
+                cli.select_title(root, None)
+            self.assertEqual(cli.select_title(root, "b").name, "b.mkv")
+
+
+class AnalyzeFileTest(unittest.TestCase):
+    @patch("mend.cli.frame_counts", return_value=(33_725, 41_270))
+    @patch("mend.cli.probe")
+    def test_reports_coded_excess_from_source_duration(self, probe, _counts) -> None:
+        probe.return_value = {
+            "streams": [{"codec_name": "mpeg2video", "width": 720, "height": 480}],
+            "format": {"duration": "1377.042", "size": "1018186285"},
+        }
+        result = cli.analyze_file(Path("episode.mkv"))
+        self.assertEqual(result["rff_display_frames"], 41_270)
+        self.assertAlmostEqual(result["rff_duration_seconds"], 1377.042333, places=5)
+        self.assertAlmostEqual(result["coded_excess_percent"], 2.147, places=2)
+
+
+if __name__ == "__main__":
+    unittest.main()

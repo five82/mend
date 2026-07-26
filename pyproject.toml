@@ -1,0 +1,12 @@
+[project]
+name = "mend"
+version = "0.1.0"
+description = "Video restoration research tools"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "vapoursynth==78",
+    "vsrepo==2.0.0",
+]
+
+[tool.uv]
+package = false

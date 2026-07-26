@@ -1,3 +1,43 @@
 # mend
 
-video cleanup
+Mend is a research tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
+
+Raw MakeMKV rips remain the source of truth. Mend currently analyzes them and renders short, lossless temporal-restoration comparisons; it does not publish files into Spindle's cache yet.
+
+## Setup
+
+Requirements: Debian 13, `uv`, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
+
+```bash
+./scripts/bootstrap-plugins
+```
+
+The script creates a uv environment and installs the VapourSynth source, field-matching, and deinterlacing plugins. When 7-Zip is absent, it extracts Debian's `7zip` package under the ignored `.tools/` directory; it does not modify the system.
+
+## Analyze a Spindle rip
+
+Pass a cache fingerprint prefix, cache directory, or MKV path:
+
+```bash
+uv run python -m mend analyze FINGERPRINT
+uv run python -m mend analyze FINGERPRINT --json
+```
+
+Analysis reports both coded MPEG-2 frames and the 29.97 fps display stream reconstructed from repeat-field flags. This distinction is required for MakeMKV's variable-frame-rate MKVs.
+
+## Render temporal samples
+
+```bash
+uv run python -m mend sample FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 10
+```
+
+This writes three 59.94p, video-only FFV1 samples under `~/.local/share/mend/samples/`:
+
+- `fieldmatch.mkv`: two-parity field matching, with BWDIF only for unmatched combed frames
+- `bwdif.mkv`: full BWDIF bob
+- `qtgmc.mkv`: QTGMC Fast with source matching
+
+Select one method with `--method`. These files are research fixtures, not library outputs.
