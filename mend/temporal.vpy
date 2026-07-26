@@ -64,6 +64,23 @@ if method == "comparison":
         for name in ("fieldmatch", "bwdif", "qtgmc")
     ]
     output = core.std.StackHorizontal(branches)
+elif method == "cleanup":
+    # Field matching preserves intact film frames; BWDIF is already confined to
+    # combed fallback frames inside this temporal baseline.
+    baseline = restore("fieldmatch")
+    deblocked = core.deblock.Deblock(baseline, quant=18)
+    conservative = core.flux.SmoothT(
+        deblocked, temporal_threshold=7, planes=[1, 2]
+    )
+    branches = [
+        core.text.Text(branch, label, alignment=7, scale=2)
+        for branch, label in (
+            (baseline, "BASELINE"),
+            (deblocked, "DEBLOCK Q18"),
+            (conservative, "DEBLOCK Q18 + CHROMA T7"),
+        )
+    ]
+    output = core.std.StackHorizontal(branches)
 else:
     output = restore(method)
 

@@ -471,9 +471,16 @@ def parser() -> argparse.ArgumentParser:
     compare_parser = commands.add_parser(
         "compare",
         parents=[sample_options],
-        help="render one synchronized, labeled comparison",
+        help="render one synchronized, labeled temporal comparison",
     )
     compare_parser.set_defaults(method="comparison", run=sample)
+
+    cleanup_parser = commands.add_parser(
+        "cleanup",
+        parents=[sample_options],
+        help="render one synchronized, labeled cleanup comparison",
+    )
+    cleanup_parser.set_defaults(method="cleanup", run=sample)
     return result
 
 

@@ -59,4 +59,17 @@ uv run python -m mend compare FINGERPRINT \
   --duration 10
 ```
 
-The comparison is written as `comparison.mkv` in the same sample directory. These files are research fixtures, not library outputs.
+The comparison is written as `comparison.mkv` in the same sample directory. Research on the initial disc selected field matching with selective BWDIF fallback as the temporal baseline: it preserves intact film frames while retaining unique field-time motion.
+
+## Compare native-resolution cleanup
+
+With temporal restoration held constant, compare no cleanup, mild deblocking, and mild deblocking plus conservative chroma smoothing:
+
+```bash
+uv run python -m mend cleanup FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 10
+```
+
+This writes `cleanup.mkv` in the sample directory. These files are research fixtures, not library outputs.

@@ -59,6 +59,13 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(args.duration, 10.0)
         self.assertIs(args.run, cli.sample)
 
+    def test_cleanup_selects_locked_temporal_baseline(self) -> None:
+        args = cli.parser().parse_args(
+            ["cleanup", "fingerprint", "--title", "title.mkv", "--start", "60"]
+        )
+        self.assertEqual(args.method, "cleanup")
+        self.assertIs(args.run, cli.sample)
+
 
 class ScanTest(unittest.TestCase):
     def test_ranks_problem_windows_and_separates_neighbors(self) -> None:
