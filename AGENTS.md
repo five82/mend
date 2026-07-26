@@ -15,7 +15,9 @@ Mend is a video cleanup project. The language, toolchain, and architecture are n
 
 ## Complexity budget
 
-Prefer simple, direct solutions. Build only what the current task requires. Avoid unnecessary dependencies, configuration, abstractions, and compatibility layers. When two approaches work, choose the one with less code and fewer concepts.
+YAGNI and KISS: build only what the current task requires; when two approaches work, take the simpler one.
+
+Production LOC should be flat or negative; tests may grow freely. Before any fix, identify the invariant that makes the bug impossible and what existing code becomes redundant if it is enforced. Prefer deletion and stronger invariants over additive patches. Do not add dependencies, modules, public APIs, configuration flags, workers, caches, or abstraction layers unless they clearly reduce total complexity. Avoid helper sprawl: do not extract single-use helpers unless they represent a real domain concept. Do not add configuration to avoid making a design decision. For non-trivial work, report the production LOC delta, new public surface, and what was removed or simplified.
 
 ## Documentation
 
