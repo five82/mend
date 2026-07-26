@@ -6,13 +6,13 @@ Raw MakeMKV rips remain the source of truth. Mend currently analyzes them and re
 
 ## Setup
 
-Requirements: Debian 13, `uv`, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
+Requirements: Debian 13, `uv`, `7zip`, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
 
 ```bash
 ./scripts/bootstrap-plugins
 ```
 
-The script creates a uv environment and installs the VapourSynth source, field-matching, and deinterlacing plugins. When 7-Zip is absent, it extracts Debian's `7zip` package under the ignored `.tools/` directory; it does not modify the system.
+The script creates a uv environment and installs the VapourSynth source, field-matching, and deinterlacing plugins.
 
 ## Analyze a Spindle rip
 
@@ -40,4 +40,13 @@ This writes three 59.94p, video-only FFV1 samples under `~/.local/share/mend/sam
 - `bwdif.mkv`: full BWDIF bob
 - `qtgmc.mkv`: QTGMC Fast with source matching
 
-Select one method with `--method`. These files are research fixtures, not library outputs.
+Select one method with `--method`. For frame-synchronized inspection, render all three methods side by side with embedded labels:
+
+```bash
+uv run python -m mend compare FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 10
+```
+
+The comparison is written as `comparison.mkv` in the same sample directory. These files are research fixtures, not library outputs.

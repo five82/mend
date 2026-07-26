@@ -171,6 +171,7 @@ def render_sample(
     duration: float,
     output: Path,
     field_order: str,
+    sample_aspect_ratio: str,
 ) -> None:
     start_frame = round(start * FPS_NUM / FPS_DEN)
     frame_count = round(duration * FPS_NUM / FPS_DEN)
@@ -206,6 +207,8 @@ def render_sample(
         "pipe:0",
         "-map",
         "0:v:0",
+        "-vf",
+        f"setsar={sample_aspect_ratio.replace(':', '/')}",
         "-c:v",
         "ffv1",
         "-level",
@@ -241,7 +244,11 @@ def sample(args: argparse.Namespace) -> int:
     title = select_title(source, args.title)
     if args.start < 0 or args.duration <= 0:
         raise ValueError("--start must be non-negative and --duration must be positive")
-    source_duration = float(probe(title)["format"]["duration"])
+    source_data = probe(title)
+    source_duration = float(source_data["format"]["duration"])
+    sample_aspect_ratio = source_data["streams"][0].get("sample_aspect_ratio")
+    if not sample_aspect_ratio or sample_aspect_ratio == "N/A":
+        sample_aspect_ratio = "1:1"
     if args.start + args.duration > source_duration:
         raise ValueError("sample extends past the source duration")
 
@@ -256,7 +263,13 @@ def sample(args: argparse.Namespace) -> int:
         output = output_dir / f"{method}.mkv"
         print(f"Rendering {method}: {output}", flush=True)
         render_sample(
-            title, method, args.start, args.duration, output, args.field_order
+            title,
+            method,
+            args.start,
+            args.duration,
+            output,
+            args.field_order,
+            sample_aspect_ratio,
         )
     return 0
 
@@ -278,25 +291,36 @@ def parser() -> argparse.ArgumentParser:
     )
     analyze_parser.set_defaults(run=analyze)
 
-    sample_parser = commands.add_parser(
-        "sample", help="render lossless temporal-restoration samples"
-    )
-    sample_parser.add_argument(
+    sample_options = argparse.ArgumentParser(add_help=False)
+    sample_options.add_argument(
         "source", help="MKV path, directory, or Spindle fingerprint prefix"
     )
-    sample_parser.add_argument(
+    sample_options.add_argument(
         "--title", help="MKV filename when source is a directory"
     )
-    sample_parser.add_argument(
+    sample_options.add_argument(
         "--start", type=float, required=True, help="start time in seconds"
     )
-    sample_parser.add_argument(
+    sample_options.add_argument(
         "--duration", type=float, default=10.0, help="duration in seconds (default: 10)"
     )
+    sample_options.add_argument("--field-order", choices=("tff", "bff"), default="tff")
+    sample_options.add_argument("--output", help="output directory")
+
+    sample_parser = commands.add_parser(
+        "sample",
+        parents=[sample_options],
+        help="render separate lossless temporal-restoration samples",
+    )
     sample_parser.add_argument("--method", choices=("all",) + METHODS, default="all")
-    sample_parser.add_argument("--field-order", choices=("tff", "bff"), default="tff")
-    sample_parser.add_argument("--output", help="output directory")
     sample_parser.set_defaults(run=sample)
+
+    compare_parser = commands.add_parser(
+        "compare",
+        parents=[sample_options],
+        help="render one synchronized, labeled comparison",
+    )
+    compare_parser.set_defaults(method="comparison", run=sample)
     return result
 
 

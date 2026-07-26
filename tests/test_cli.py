@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from mend import cli
@@ -47,6 +48,45 @@ class SourceFilesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "--title is required"):
                 cli.select_title(root, None)
             self.assertEqual(cli.select_title(root, "b").name, "b.mkv")
+
+
+class ParserTest(unittest.TestCase):
+    def test_compare_selects_synchronized_comparison(self) -> None:
+        args = cli.parser().parse_args(
+            ["compare", "fingerprint", "--title", "title.mkv", "--start", "60"]
+        )
+        self.assertEqual(args.method, "comparison")
+        self.assertEqual(args.duration, 10.0)
+        self.assertIs(args.run, cli.sample)
+
+
+class SampleTest(unittest.TestCase):
+    def test_preserves_source_sample_aspect_ratio(self) -> None:
+        title = Path("/source/title.mkv")
+        with (
+            tempfile.TemporaryDirectory() as output,
+            patch("mend.cli.resolve_source", return_value=title),
+            patch("mend.cli.select_title", return_value=title),
+            patch("mend.cli.render_sample") as render,
+            patch(
+                "mend.cli.probe",
+                return_value={
+                    "streams": [{"sample_aspect_ratio": "8:9"}],
+                    "format": {"duration": "100"},
+                },
+            ),
+        ):
+            args = SimpleNamespace(
+                source="source",
+                title=None,
+                start=1.0,
+                duration=2.0,
+                method="comparison",
+                output=output,
+                field_order="tff",
+            )
+            self.assertEqual(cli.sample(args), 0)
+        self.assertEqual(render.call_args.args[-1], "8:9")
 
 
 class AnalyzeFileTest(unittest.TestCase):

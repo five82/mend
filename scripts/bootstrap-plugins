@@ -4,27 +4,14 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$root"
 
-if command -v 7z >/dev/null 2>&1; then
-    sevenzip=$(command -v 7z)
-else
-    mkdir -p .tools/debs .tools/bin
-    if ! find .tools/debs -name '7zip_*.deb' -print -quit | grep -q .; then
-        (cd .tools/debs && apt-get download 7zip)
-    fi
-    package=$(find .tools/debs -name '7zip_*.deb' -print -quit)
-    dpkg-deb -x "$package" .tools
-    cat >.tools/bin/7z <<'EOF'
-#!/bin/sh
-cd "$(dirname "$0")/../usr/lib/7zip" || exit 1
-exec ./7z "$@"
-EOF
-    chmod +x .tools/bin/7z
-    sevenzip=$root/.tools/bin/7z
+if ! command -v 7z >/dev/null 2>&1; then
+    echo "error: 7z is required (Debian package: 7zip)" >&2
+    exit 1
 fi
 
 uv sync
 uv run vsrepo update
-PATH="$(dirname "$sevenzip"):$PATH" .venv/bin/vsrepo install bs tivtc havsfunc vsutil
+.venv/bin/vsrepo install bs tivtc havsfunc vsutil
 
 # vsrepo 2.0.0 emits a non-PEP-440 dist-info version for ZNEDI3. Repair it so
 # subsequent uv commands can inspect the environment.
