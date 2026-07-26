@@ -63,7 +63,7 @@ The comparison is written as `comparison.mkv` in the same sample directory. Rese
 
 ## Compare native-resolution cleanup
 
-With temporal restoration held constant, compare no cleanup, mild deblocking, and mild deblocking plus conservative chroma smoothing:
+With temporal restoration held constant, compare no cleanup against the locked Deblock Q18 profile:
 
 ```bash
 uv run python -m mend cleanup FINGERPRINT \
