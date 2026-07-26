@@ -59,7 +59,7 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(args.duration, 10.0)
         self.assertIs(args.run, cli.sample)
 
-    def test_cleanup_selects_experimental_comparison(self) -> None:
+    def test_cleanup_selects_locked_profile_comparison(self) -> None:
         args = cli.parser().parse_args(
             ["cleanup", "fingerprint", "--title", "title.mkv", "--start", "60"]
         )
@@ -71,6 +71,13 @@ class ParserTest(unittest.TestCase):
             ["restore", "fingerprint", "--title", "title.mkv", "--start", "60"]
         )
         self.assertEqual(args.method, "restore")
+        self.assertIs(args.run, cli.sample)
+
+    def test_upscale_selects_synchronized_comparison(self) -> None:
+        args = cli.parser().parse_args(
+            ["upscale", "fingerprint", "--title", "title.mkv", "--start", "60"]
+        )
+        self.assertEqual(args.method, "upscale")
         self.assertIs(args.run, cli.sample)
 
 
@@ -162,6 +169,33 @@ class SampleTest(unittest.TestCase):
             self.assertEqual(cli.sample(args), 0)
         self.assertEqual(render.call_args.args[-2], "8:9")
         self.assertEqual(render.call_args.args[-1]["color_space"], "smpte170m")
+
+    def test_uses_square_pixels_for_upscale(self) -> None:
+        title = Path("/source/title.mkv")
+        with (
+            tempfile.TemporaryDirectory() as output,
+            patch("mend.cli.resolve_source", return_value=title),
+            patch("mend.cli.select_title", return_value=title),
+            patch("mend.cli.render_sample") as render,
+            patch(
+                "mend.cli.probe",
+                return_value={
+                    "streams": [{"sample_aspect_ratio": "8:9"}],
+                    "format": {"duration": "100"},
+                },
+            ),
+        ):
+            args = SimpleNamespace(
+                source="source",
+                title=None,
+                start=1.0,
+                duration=2.0,
+                method="upscale",
+                output=output,
+                field_order="tff",
+            )
+            self.assertEqual(cli.sample(args), 0)
+        self.assertEqual(render.call_args.args[-2], "1:1")
 
 
 class AnalyzeFileTest(unittest.TestCase):

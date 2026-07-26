@@ -80,7 +80,7 @@ def remove_gibbs(clip):
     )
 
 
-def candidate():
+def clean():
     from havsfunc import SMDegrain
 
     output = core.dotkill.DotKillS(restore("fieldmatch"), iterations=1)
@@ -97,6 +97,29 @@ def candidate():
     )
 
 
+def upscale(name):
+    output = clean()
+    if name == "spline36":
+        return core.resize.Spline36(output, width=1440, height=1080)
+    if name == "nnedi3":
+        from nnedi3_resample import nnedi3_resample
+
+        return nnedi3_resample(
+            output,
+            target_width=1440,
+            target_height=1080,
+            mats="601",
+            matd="601",
+            cplaces="mpeg2",
+            cplaced="mpeg2",
+            fulls=False,
+            fulld=False,
+            nns=4,
+            mode="znedi3",
+        )
+    raise ValueError(f"unknown upscale method: {name}")
+
+
 if method == "comparison":
     branches = [
         core.text.Text(restore(name), name.upper(), alignment=7, scale=2)
@@ -108,13 +131,21 @@ elif method == "cleanup":
         core.text.Text(branch, label, alignment=7, scale=2)
         for branch, label in (
             (restore("fieldmatch"), "BASELINE"),
-            (candidate(), "RESTORATION V2 CANDIDATE"),
+            (clean(), "RESTORATION V2"),
         )
     ]
     output = core.std.StackHorizontal(branches)
 elif method == "restore":
-    # Keep the approved output stable while the stronger chain is under review.
-    output = deblock(restore("fieldmatch"))
+    output = clean()
+elif method == "upscale":
+    branches = [
+        core.text.Text(upscale(name), label, alignment=7, scale=2)
+        for name, label in (
+            ("spline36", "SPLINE36"),
+            ("nnedi3", "NNEDI3"),
+        )
+    ]
+    output = core.std.StackHorizontal(branches)
 else:
     output = restore(method)
 

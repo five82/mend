@@ -2,7 +2,7 @@
 
 Mend is a tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
 
-Raw MakeMKV rips remain the source of truth. Mend currently analyzes them and renders short, lossless temporal-restoration comparisons; it does not publish files into Spindle's cache yet.
+Raw MakeMKV rips remain the source of truth. Mend analyzes them and renders short, lossless restoration and upscale comparisons; it does not publish files into Spindle's cache yet.
 
 ## Setup
 
@@ -63,7 +63,7 @@ The comparison is written as `comparison.mkv` in the same sample directory. Rese
 
 ## Compare native-resolution cleanup
 
-With temporal restoration held constant, compare no cleanup against the experimental animation-restoration chain:
+With temporal restoration held constant, compare no cleanup against the locked animation-restoration chain:
 
 ```bash
 uv run python -m mend cleanup FINGERPRINT \
@@ -72,11 +72,11 @@ uv run python -m mend cleanup FINGERPRINT \
   --duration 10
 ```
 
-The candidate applies spatial dot-crawl removal, Deblock Q18, edge-masked Gibbs-noise cleanup, and motion-compensated luma denoising. Chroma is excluded from temporal denoising. This writes `cleanup.mkv` in the sample directory. The candidate remains a research profile pending visual review.
+The restoration applies spatial dot-crawl removal, Deblock Q18, edge-masked Gibbs-noise cleanup, and motion-compensated luma denoising. Chroma is excluded from temporal denoising. This writes `cleanup.mkv` in the sample directory.
 
 ## Render the locked native restoration
 
-Render the existing field matching with selective BWDIF fallback followed by Deblock Q18. This command intentionally remains unchanged while the stronger cleanup chain is under review:
+Render field matching with selective BWDIF fallback followed by the locked animation-restoration chain:
 
 ```bash
 uv run python -m mend restore FINGERPRINT \
@@ -86,3 +86,16 @@ uv run python -m mend restore FINGERPRINT \
 ```
 
 This writes a native-resolution, 59.94p, video-only FFV1 `restore.mkv`. Color metadata and source sample aspect ratio are preserved. These files are research fixtures, not library outputs.
+
+## Compare 1440x1080 upscales
+
+Compare conventional Spline36 scaling against NNEDI3 after the locked native restoration:
+
+```bash
+uv run python -m mend upscale FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 4
+```
+
+This writes a synchronized, square-pixel `upscale.mkv` with Spline36 on the left and NNEDI3 on the right. Upscaling remains a separate research stage; neither method is locked yet.

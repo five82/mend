@@ -447,7 +447,7 @@ def sample(args: argparse.Namespace) -> int:
             args.duration,
             output,
             args.field_order,
-            sample_aspect_ratio,
+            "1:1" if method == "upscale" else sample_aspect_ratio,
             stream,
         )
     return 0
@@ -532,6 +532,13 @@ def parser() -> argparse.ArgumentParser:
         help="render the locked native-resolution restoration",
     )
     restore_parser.set_defaults(method="restore", run=sample)
+
+    upscale_parser = commands.add_parser(
+        "upscale",
+        parents=[sample_options],
+        help="compare 1440x1080 upscale methods",
+    )
+    upscale_parser.set_defaults(method="upscale", run=sample)
     return result
 
 
