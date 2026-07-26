@@ -58,6 +58,11 @@ def restore(name):
     raise ValueError(f"unknown temporal method: {name}")
 
 
+def clean():
+    # Keep cleanup spatial: temporal smoothing risks trails across field-time motion.
+    return core.deblock.Deblock(restore("fieldmatch"), quant=18)
+
+
 if method == "comparison":
     branches = [
         core.text.Text(restore(name), name.upper(), alignment=7, scale=2)
@@ -65,18 +70,17 @@ if method == "comparison":
     ]
     output = core.std.StackHorizontal(branches)
 elif method == "cleanup":
-    # Field matching preserves intact film frames; BWDIF is already confined to
-    # combed fallback frames inside this temporal baseline.
     baseline = restore("fieldmatch")
-    deblocked = core.deblock.Deblock(baseline, quant=18)
     branches = [
         core.text.Text(branch, label, alignment=7, scale=2)
         for branch, label in (
             (baseline, "BASELINE"),
-            (deblocked, "DEBLOCK Q18"),
+            (clean(), "DEBLOCK Q18"),
         )
     ]
     output = core.std.StackHorizontal(branches)
+elif method == "restore":
+    output = clean()
 else:
     output = restore(method)
 

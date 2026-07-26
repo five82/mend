@@ -70,7 +70,7 @@ def probe(path: Path) -> dict:
         "-select_streams",
         "v:0",
         "-show_entries",
-        "stream=codec_name,width,height,sample_aspect_ratio,display_aspect_ratio,field_order,r_frame_rate,avg_frame_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries:format=duration,size",
+        "stream=codec_name,width,height,sample_aspect_ratio,display_aspect_ratio,field_order,r_frame_rate,avg_frame_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries,chroma_location:format=duration,size",
         "-of",
         "json",
         str(path),
@@ -299,6 +299,23 @@ def sample_output_dir(source: Path, title: Path, start: float) -> Path:
     return base / "mend" / "samples" / fingerprint / title.stem / f"{start:09.3f}"
 
 
+def matroska_color_properties(metadata: dict) -> list[str]:
+    properties = []
+    for key, name, values in (
+        ("color_space", "color-matrix-coefficients", {"smpte170m": "6"}),
+        ("color_range", "color-range", {"tv": "1"}),
+        ("color_transfer", "color-transfer-characteristics", {"smpte170m": "6"}),
+        ("color_primaries", "color-primaries", {"smpte170m": "6"}),
+    ):
+        value = metadata.get(key)
+        if not value or value == "unknown":
+            continue
+        if value not in values:
+            raise ValueError(f"unsupported {key}: {value}")
+        properties.extend(("--set", f"{name}={values[value]}"))
+    return properties
+
+
 def render_sample(
     title: Path,
     method: str,
@@ -307,6 +324,7 @@ def render_sample(
     output: Path,
     field_order: str,
     sample_aspect_ratio: str,
+    color_metadata: dict,
 ) -> None:
     start_frame = round(start * FPS_NUM / FPS_DEN)
     frame_count = round(duration * FPS_NUM / FPS_DEN)
@@ -330,6 +348,18 @@ def render_sample(
         str(script),
         "-",
     ]
+    properties = matroska_color_properties(color_metadata)
+    color_options = []
+    for key, option in (
+        ("color_range", "-color_range"),
+        ("color_space", "-colorspace"),
+        ("color_transfer", "-color_trc"),
+        ("color_primaries", "-color_primaries"),
+        ("chroma_location", "-chroma_sample_location"),
+    ):
+        value = color_metadata.get(key)
+        if value and value != "unknown":
+            color_options.extend((option, value))
     ffmpeg_command = [
         "ffmpeg",
         "-hide_banner",
@@ -344,6 +374,7 @@ def render_sample(
         "0:v:0",
         "-vf",
         f"setsar={sample_aspect_ratio.replace(':', '/')}",
+        *color_options,
         "-c:v",
         "ffv1",
         "-level",
@@ -373,6 +404,17 @@ def render_sample(
         detail = (first_stderr + second.stderr).decode(errors="replace").strip()
         raise RuntimeError(f"sample render failed for {method}: {detail}")
 
+    if properties:
+        metadata_result = subprocess.run(
+            ["mkvpropedit", str(output), "--edit", "track:v1", *properties],
+            capture_output=True,
+            check=False,
+        )
+        if metadata_result.returncode:
+            output.unlink(missing_ok=True)
+            detail = metadata_result.stderr.decode(errors="replace").strip()
+            raise RuntimeError(f"metadata update failed for {method}: {detail}")
+
 
 def sample(args: argparse.Namespace) -> int:
     source = resolve_source(args.source)
@@ -381,7 +423,8 @@ def sample(args: argparse.Namespace) -> int:
         raise ValueError("--start must be non-negative and --duration must be positive")
     source_data = probe(title)
     source_duration = float(source_data["format"]["duration"])
-    sample_aspect_ratio = source_data["streams"][0].get("sample_aspect_ratio")
+    stream = source_data["streams"][0]
+    sample_aspect_ratio = stream.get("sample_aspect_ratio")
     if not sample_aspect_ratio or sample_aspect_ratio == "N/A":
         sample_aspect_ratio = "1:1"
     if args.start + args.duration > source_duration:
@@ -405,6 +448,7 @@ def sample(args: argparse.Namespace) -> int:
             output,
             args.field_order,
             sample_aspect_ratio,
+            stream,
         )
     return 0
 
@@ -481,6 +525,13 @@ def parser() -> argparse.ArgumentParser:
         help="render one synchronized, labeled cleanup comparison",
     )
     cleanup_parser.set_defaults(method="cleanup", run=sample)
+
+    restore_parser = commands.add_parser(
+        "restore",
+        parents=[sample_options],
+        help="render the locked native-resolution restoration",
+    )
+    restore_parser.set_defaults(method="restore", run=sample)
     return result
 
 

@@ -66,6 +66,13 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(args.method, "cleanup")
         self.assertIs(args.run, cli.sample)
 
+    def test_restore_selects_locked_native_profile(self) -> None:
+        args = cli.parser().parse_args(
+            ["restore", "fingerprint", "--title", "title.mkv", "--start", "60"]
+        )
+        self.assertEqual(args.method, "restore")
+        self.assertIs(args.run, cli.sample)
+
 
 class ScanTest(unittest.TestCase):
     def test_ranks_problem_windows_and_separates_neighbors(self) -> None:
@@ -97,6 +104,32 @@ class ScanTest(unittest.TestCase):
 
 
 class SampleTest(unittest.TestCase):
+    def test_maps_ntsc_color_metadata_to_matroska_properties(self) -> None:
+        self.assertEqual(
+            cli.matroska_color_properties(
+                {
+                    "color_space": "smpte170m",
+                    "color_range": "tv",
+                    "color_transfer": "smpte170m",
+                    "color_primaries": "smpte170m",
+                }
+            ),
+            [
+                "--set",
+                "color-matrix-coefficients=6",
+                "--set",
+                "color-range=1",
+                "--set",
+                "color-transfer-characteristics=6",
+                "--set",
+                "color-primaries=6",
+            ],
+        )
+
+    def test_rejects_unvalidated_color_metadata(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported color_space"):
+            cli.matroska_color_properties({"color_space": "bt709"})
+
     def test_preserves_source_sample_aspect_ratio(self) -> None:
         title = Path("/source/title.mkv")
         with (
@@ -107,7 +140,12 @@ class SampleTest(unittest.TestCase):
             patch(
                 "mend.cli.probe",
                 return_value={
-                    "streams": [{"sample_aspect_ratio": "8:9"}],
+                    "streams": [
+                        {
+                            "sample_aspect_ratio": "8:9",
+                            "color_space": "smpte170m",
+                        }
+                    ],
                     "format": {"duration": "100"},
                 },
             ),
@@ -122,7 +160,8 @@ class SampleTest(unittest.TestCase):
                 field_order="tff",
             )
             self.assertEqual(cli.sample(args), 0)
-        self.assertEqual(render.call_args.args[-1], "8:9")
+        self.assertEqual(render.call_args.args[-2], "8:9")
+        self.assertEqual(render.call_args.args[-1]["color_space"], "smpte170m")
 
 
 class AnalyzeFileTest(unittest.TestCase):

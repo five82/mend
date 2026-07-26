@@ -72,4 +72,17 @@ uv run python -m mend cleanup FINGERPRINT \
   --duration 10
 ```
 
-This writes `cleanup.mkv` in the sample directory. These files are research fixtures, not library outputs.
+This writes `cleanup.mkv` in the sample directory.
+
+## Render the locked native restoration
+
+Render field matching with selective BWDIF fallback followed by Deblock Q18:
+
+```bash
+uv run python -m mend restore FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 10
+```
+
+This writes a native-resolution, 59.94p, video-only FFV1 `restore.mkv`. Color metadata and source sample aspect ratio are preserved. These files are research fixtures, not library outputs.
