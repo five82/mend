@@ -1,6 +1,6 @@
 # mend
 
-Mend is a research tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
+Mend is a tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
 
 Raw MakeMKV rips remain the source of truth. Mend currently analyzes them and renders short, lossless temporal-restoration comparisons; it does not publish files into Spindle's cache yet.
 
@@ -24,6 +24,16 @@ uv run python -m mend analyze FINGERPRINT --json
 ```
 
 Analysis reports both coded MPEG-2 frames and the 29.97 fps display stream reconstructed from repeat-field flags. This distinction is required for MakeMKV's variable-frame-rate MKVs.
+
+## Find temporal problem areas
+
+Rank windows containing video-rate cadence, interlace evidence, or repeated fields:
+
+```bash
+uv run python -m mend scan FINGERPRINT --title TITLE.mkv
+```
+
+Omit `--title` to scan every MKV in the cache entry. Use the reported start times with `mend compare`; `--window`, `--count`, and `--json` control the scan output. Ranking is a fixture-selection heuristic, not an automatic restoration decision.
 
 ## Render temporal samples
 

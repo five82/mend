@@ -1,8 +1,12 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
+from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 
 import vapoursynth as vs
@@ -158,6 +162,137 @@ def analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def rank_scan_metadata(
+    lines: Iterable[str], duration: float, window: float, count: int
+) -> list[dict]:
+    bins = defaultdict(lambda: {"frames": 0, "interlaced": 0, "repeated": 0, "cuts": 0})
+    current = None
+    for line in lines:
+        if line.startswith("frame:"):
+            match = re.search(r"\bpts_time:([^ ]+)", line)
+            current = int(float(match.group(1)) // window) if match else None
+            if current is not None:
+                bins[current]["frames"] += 1
+            continue
+        if current is None or "=" not in line:
+            continue
+        key, value = line.strip().split("=", 1)
+        if key == "lavfi.idet.multiple.current_frame" and value in ("tff", "bff"):
+            bins[current]["interlaced"] += 1
+        elif key == "lavfi.idet.repeated.current_frame" and value != "neither":
+            bins[current]["repeated"] += 1
+        elif key == "lavfi.scd.score" and float(value) >= 10:
+            bins[current]["cuts"] += 1
+
+    expected_frames = window * 24_000 / 1_001
+    ranked = []
+    for index, stats in bins.items():
+        start = index * window
+        if start + window > duration or stats["frames"] < expected_frames * 0.8:
+            continue
+        cadence = max(0.0, stats["frames"] / expected_frames - 1) * 100
+        interlaced = stats["interlaced"] / stats["frames"] * 100
+        repeated = stats["repeated"] / stats["frames"] * 100
+        ranked.append(
+            {
+                "start_seconds": start,
+                "risk_score": cadence + interlaced + repeated * 0.25,
+                "cadence_excess_percent": cadence,
+                "interlaced_percent": interlaced,
+                "repeated_percent": repeated,
+                "scene_changes": stats["cuts"],
+                "coded_frames": stats["frames"],
+            }
+        )
+
+    selected = []
+    for candidate in sorted(ranked, key=lambda item: item["risk_score"], reverse=True):
+        if all(
+            abs(candidate["start_seconds"] - item["start_seconds"]) >= window * 3
+            for item in selected
+        ):
+            selected.append(candidate)
+            if len(selected) == count:
+                break
+    return selected
+
+
+def scan_file(path: Path, window: float, count: int) -> dict:
+    source_data = probe(path)
+    duration = float(source_data["format"]["duration"])
+    with tempfile.NamedTemporaryFile(
+        prefix="mend-scan-", suffix=".txt", delete=False
+    ) as file:
+        metadata_path = Path(file.name)
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        str(path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        f"idet,scdet,metadata=mode=print:file={metadata_path}",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, check=False)
+        if result.returncode:
+            detail = result.stderr.decode(errors="replace").strip()
+            raise RuntimeError(f"scan failed for {path.name}: {detail}")
+        with metadata_path.open() as metadata:
+            candidates = rank_scan_metadata(metadata, duration, window, count)
+    finally:
+        metadata_path.unlink(missing_ok=True)
+    return {
+        "name": path.name,
+        "path": str(path),
+        "duration_seconds": duration,
+        "window_seconds": window,
+        "candidates": candidates,
+    }
+
+
+def scan(args: argparse.Namespace) -> int:
+    if args.window <= 0 or args.count <= 0:
+        raise ValueError("--window and --count must be positive")
+    source = resolve_source(args.source)
+    files = [select_title(source, args.title)] if args.title else source_files(source)
+    result = {"source": str(source), "files": []}
+    for path in files:
+        print(f"Scanning {path.name}...", file=sys.stderr, flush=True)
+        result["files"].append(scan_file(path, args.window, args.count))
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+
+    for item in result["files"]:
+        print(item["name"])
+        print(
+            f"{'Start':>9} {'Score':>7} {'Cadence':>9} {'Interlace':>10}"
+            f" {'Repeated':>9} {'Cuts':>5}"
+        )
+        for candidate in item["candidates"]:
+            print(
+                f"{candidate['start_seconds']:>9.3f}"
+                f" {candidate['risk_score']:>7.1f}"
+                f" {candidate['cadence_excess_percent']:>8.1f}%"
+                f" {candidate['interlaced_percent']:>9.1f}%"
+                f" {candidate['repeated_percent']:>8.1f}%"
+                f" {candidate['scene_changes']:>5}"
+            )
+        print()
+    return 0
+
+
 def sample_output_dir(source: Path, title: Path, start: float) -> Path:
     fingerprint = source.name if source.is_dir() else "files"
     base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
@@ -290,6 +425,24 @@ def parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit machine-readable JSON"
     )
     analyze_parser.set_defaults(run=analyze)
+
+    scan_parser = commands.add_parser(
+        "scan", help="rank temporal-problem windows for comparison"
+    )
+    scan_parser.add_argument(
+        "source", help="MKV path, directory, or Spindle fingerprint prefix"
+    )
+    scan_parser.add_argument("--title", help="scan only this MKV filename")
+    scan_parser.add_argument(
+        "--window", type=float, default=10.0, help="window duration in seconds"
+    )
+    scan_parser.add_argument(
+        "--count", type=int, default=6, help="candidate windows per title"
+    )
+    scan_parser.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
+    )
+    scan_parser.set_defaults(run=scan)
 
     sample_options = argparse.ArgumentParser(add_help=False)
     sample_options.add_argument(

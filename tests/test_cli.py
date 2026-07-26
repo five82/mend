@@ -60,6 +60,35 @@ class ParserTest(unittest.TestCase):
         self.assertIs(args.run, cli.sample)
 
 
+class ScanTest(unittest.TestCase):
+    def test_ranks_problem_windows_and_separates_neighbors(self) -> None:
+        lines = []
+        for index, frames, interlaced, repeated in (
+            (0, 240, 0, 0),
+            (1, 300, 300, 0),
+            (2, 300, 300, 0),
+            (4, 250, 0, 250),
+        ):
+            for frame in range(frames):
+                lines.extend(
+                    [
+                        f"frame:{frame} pts_time:{index * 10 + frame / 30}",
+                        "lavfi.idet.multiple.current_frame="
+                        + ("tff" if frame < interlaced else "progressive"),
+                        "lavfi.idet.repeated.current_frame="
+                        + ("top" if frame < repeated else "neither"),
+                        "lavfi.scd.score=0.000",
+                    ]
+                )
+
+        candidates = cli.rank_scan_metadata(lines, duration=100, window=10, count=2)
+        self.assertEqual(
+            [candidate["start_seconds"] for candidate in candidates], [10, 40]
+        )
+        self.assertAlmostEqual(candidates[0]["cadence_excess_percent"], 25.125)
+        self.assertEqual(candidates[0]["interlaced_percent"], 100)
+
+
 class SampleTest(unittest.TestCase):
     def test_preserves_source_sample_aspect_ratio(self) -> None:
         title = Path("/source/title.mkv")
