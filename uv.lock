@@ -61,12 +61,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "vapoursynth" },
+    { name = "vapoursynth-dotkill" },
     { name = "vsrepo" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "vapoursynth", specifier = "==78" },
+    { name = "vapoursynth-dotkill", git = "https://github.com/myrsloik/DotKill.git?rev=6396fb441a9f3b03889fef7be597e68366e161a8" },
     { name = "vsrepo", specifier = "==2.0.0" },
 ]
 
@@ -194,6 +196,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/71/4906acd1985203a575825afe9547ed5904796cd7f6331cc796b3ff33c9d6/vapoursynth-78-cp312-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:c56eb859fc7352df935f46e4014402bf5e59e10d8f695b8d35e8025d07306b84", size = 2560895, upload-time = "2026-07-24T20:24:28.125Z" },
     { url = "https://files.pythonhosted.org/packages/19/1c/c5c80aecde43fbdbc8136c7786b16b8c8853ac0f261e5c2da46b46bfafad/vapoursynth-78-cp312-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:33592243d7d1b1706497a3d7b564dd0ad041a9943dc029dcd638fc0b55565acc", size = 5325194, upload-time = "2026-07-24T20:24:29.722Z" },
     { url = "https://files.pythonhosted.org/packages/a0/c2/bd739e3fd4dfea3f776cae03cde20d9589f4371989cc74e8b511b3b2ec2a/vapoursynth-78-cp312-abi3-win_amd64.whl", hash = "sha256:56454b3ac82768b037c6962982690375f2a50f6d47fa4b23f728bfd2dcf2efa2", size = 15061045, upload-time = "2026-07-24T20:24:31.17Z" },
+]
+
+[[package]]
+name = "vapoursynth-dotkill"
+version = "3.0"
+source = { git = "https://github.com/myrsloik/DotKill.git?rev=6396fb441a9f3b03889fef7be597e68366e161a8#6396fb441a9f3b03889fef7be597e68366e161a8" }
+dependencies = [
+    { name = "vapoursynth" },
 ]
 
 [[package]]

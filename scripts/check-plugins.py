@@ -1,6 +1,6 @@
 import vapoursynth as vs
 
-required = {"bs", "bwdif", "tivtc"}
+required = {"bs", "bwdif", "dfttest", "dotkill", "mv", "rgvs", "tivtc"}
 installed = {plugin.namespace for plugin in vs.core.plugins()}
 missing = sorted(required - installed)
 if missing:
@@ -8,4 +8,4 @@ if missing:
 
 import havsfunc  # noqa: F401
 
-print("VapourSynth temporal plugin stack is ready")
+print("VapourSynth restoration plugin stack is ready")

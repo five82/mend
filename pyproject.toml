@@ -5,6 +5,7 @@ description = "Video restoration research tools"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "vapoursynth==78",
+    "vapoursynth-dotkill @ git+https://github.com/myrsloik/DotKill.git@6396fb441a9f3b03889fef7be597e68366e161a8",
     "vsrepo==2.0.0",
 ]
 

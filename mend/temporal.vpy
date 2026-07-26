@@ -58,9 +58,43 @@ def restore(name):
     raise ValueError(f"unknown temporal method: {name}")
 
 
-def clean():
-    # Keep cleanup spatial: temporal smoothing risks trails across field-time motion.
-    return core.deblock.Deblock(restore("fieldmatch"), quant=18)
+def deblock(clip):
+    return core.deblock.Deblock(clip, quant=18)
+
+
+def remove_gibbs(clip):
+    luma = core.std.ShufflePlanes(clip, 0, vs.GRAY)
+    edge = core.std.Expr(core.std.Prewitt(luma), "x 20 - 20 / 255 *")
+    edge = core.rgvs.RemoveGrain(edge, mode=17)
+
+    outer = edge
+    for _ in range(4):
+        outer = core.std.Maximum(outer)
+    inner = core.std.Minimum(core.std.Inflate(edge))
+    mask = core.std.Expr([outer, inner], "x y -")
+    mask = core.std.BoxBlur(mask, hradius=1, vradius=1)
+
+    smooth = core.dfttest.DFTTest(clip, tbsize=1, planes=[0])
+    return core.std.MaskedMerge(
+        clip, smooth, mask, planes=[0], first_plane=True
+    )
+
+
+def candidate():
+    from havsfunc import SMDegrain
+
+    output = core.dotkill.DotKillS(restore("fieldmatch"), iterations=1)
+    output = remove_gibbs(deblock(output))
+    return SMDegrain(
+        output,
+        tr=2,
+        thSAD=400,
+        RefineMotion=True,
+        contrasharp=True,
+        plane=0,
+        prefilter=2,
+        chroma=False,
+    )
 
 
 if method == "comparison":
@@ -70,17 +104,17 @@ if method == "comparison":
     ]
     output = core.std.StackHorizontal(branches)
 elif method == "cleanup":
-    baseline = restore("fieldmatch")
     branches = [
         core.text.Text(branch, label, alignment=7, scale=2)
         for branch, label in (
-            (baseline, "BASELINE"),
-            (clean(), "DEBLOCK Q18"),
+            (restore("fieldmatch"), "BASELINE"),
+            (candidate(), "RESTORATION V2 CANDIDATE"),
         )
     ]
     output = core.std.StackHorizontal(branches)
 elif method == "restore":
-    output = clean()
+    # Keep the approved output stable while the stronger chain is under review.
+    output = deblock(restore("fieldmatch"))
 else:
     output = restore(method)
 

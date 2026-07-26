@@ -12,7 +12,7 @@ Requirements: Debian 13, `uv`, `7zip`, the existing custom FFmpeg/ffprobe build,
 ./scripts/bootstrap-plugins
 ```
 
-The script creates a uv environment and installs the VapourSynth source, field-matching, and deinterlacing plugins.
+The script creates a uv environment and installs the VapourSynth source, field-matching, deinterlacing, dot-crawl, denoising, and masking plugins.
 
 ## Analyze a Spindle rip
 
@@ -63,7 +63,7 @@ The comparison is written as `comparison.mkv` in the same sample directory. Rese
 
 ## Compare native-resolution cleanup
 
-With temporal restoration held constant, compare no cleanup against the locked Deblock Q18 profile:
+With temporal restoration held constant, compare no cleanup against the experimental animation-restoration chain:
 
 ```bash
 uv run python -m mend cleanup FINGERPRINT \
@@ -72,11 +72,11 @@ uv run python -m mend cleanup FINGERPRINT \
   --duration 10
 ```
 
-This writes `cleanup.mkv` in the sample directory.
+The candidate applies spatial dot-crawl removal, Deblock Q18, edge-masked Gibbs-noise cleanup, and motion-compensated luma denoising. Chroma is excluded from temporal denoising. This writes `cleanup.mkv` in the sample directory. The candidate remains a research profile pending visual review.
 
 ## Render the locked native restoration
 
-Render field matching with selective BWDIF fallback followed by Deblock Q18:
+Render the existing field matching with selective BWDIF fallback followed by Deblock Q18. This command intentionally remains unchanged while the stronger cleanup chain is under review:
 
 ```bash
 uv run python -m mend restore FINGERPRINT \
