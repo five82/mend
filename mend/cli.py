@@ -14,7 +14,7 @@ import vapoursynth as vs
 FPS_NUM = 60_000
 FPS_DEN = 1_001
 METHODS = ("fieldmatch", "bwdif", "qtgmc")
-SQUARE_PIXEL_METHODS = ("upscale", "finishing")
+SQUARE_PIXEL_METHODS = ("upscale", "finishing", "ai-cugan-1", "ai-cugan0", "ai-cugan3")
 
 
 def spindle_cache_dir() -> Path:
@@ -332,6 +332,10 @@ def render_sample(
     end_frame = start_frame + frame_count - 1
     script = Path(__file__).with_name("temporal.vpy")
     vspipe = Path(sys.executable).with_name("vspipe")
+    environment = os.environ.copy()
+    nvidia_icd = Path("/usr/share/vulkan/icd.d/nvidia_icd.json")
+    if nvidia_icd.is_file():
+        environment.setdefault("VK_ICD_FILENAMES", str(nvidia_icd))
     pipe_command = [
         str(vspipe),
         "--arg",
@@ -392,7 +396,10 @@ def render_sample(
     ]
 
     first = subprocess.Popen(
-        pipe_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        pipe_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
     )
     assert first.stdout is not None
     second = subprocess.run(
@@ -443,6 +450,9 @@ def sample(args: argparse.Namespace) -> int:
             "compress2-long": "ai-compress5-45",
             "compress3": "ai-compress6",
             "compress3-long": "ai-compress6-45",
+            "cugan-conservative": "ai-cugan-1",
+            "cugan-no-denoise": "ai-cugan0",
+            "cugan-denoise3x": "ai-cugan3",
         }[model]
     methods = METHODS if method == "all" else (method,)
     output_dir = (
@@ -577,6 +587,9 @@ def parser() -> argparse.ArgumentParser:
             "compress2-long",
             "compress3",
             "compress3-long",
+            "cugan-conservative",
+            "cugan-no-denoise",
+            "cugan-denoise3x",
         ),
         default="denoise",
         help="temporal restoration model (default: denoise)",

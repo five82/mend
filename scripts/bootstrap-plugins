@@ -4,7 +4,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$root"
 
-for command in 7z cmake git c++; do
+for command in 7z cmake curl git c++; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "error: $command is required" >&2
         exit 1
@@ -26,6 +26,8 @@ if [ -d "$bad" ]; then
     sed -i 's/^Version: 3bd542a$/Version: 0+3bd542a/' "$good/METADATA"
 fi
 
+plugin_dir="$site/vapoursynth/plugins"
+
 if ! .venv/bin/python -c 'import vapoursynth as vs; vs.core.neo_f3kdb' 2>/dev/null; then
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT HUP INT TERM
@@ -38,10 +40,57 @@ if ! .venv/bin/python -c 'import vapoursynth as vs; vs.core.neo_f3kdb' 2>/dev/nu
     cmake -S "$work" -B "$work/build" \
         -DENABLE_PAR=OFF -DCMAKE_BUILD_TYPE=Release
     cmake --build "$work/build" --parallel
-    plugin_dir="$site/vapoursynth/plugins"
     mkdir -p "$plugin_dir"
     cp "$work/build/libneo-f3kdb.so" "$plugin_dir/neo-f3kdb.so"
     rm -rf "$work"
+    trap - EXIT HUP INT TERM
+fi
+
+if ! .venv/bin/python -c 'import vapoursynth as vs; vs.core.rcnv' 2>/dev/null; then
+    for command in glslangValidator; do
+        if ! command -v "$command" >/dev/null 2>&1; then
+            echo "error: $command is required (Debian package: glslang-tools)" >&2
+            exit 1
+        fi
+    done
+    if ! pkg-config --exists vulkan; then
+        echo "error: Vulkan development files are required (Debian package: libvulkan-dev)" >&2
+        exit 1
+    fi
+
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT HUP INT TERM
+    git -C "$work" init -q
+    git -C "$work" remote add origin \
+        https://github.com/Kiyamou/VapourSynth-RealCUGAN-ncnn-Vulkan.git
+    git -C "$work" fetch -q --depth 1 origin \
+        4db9493b12aab1eb089db6537d20e7872efae9c0
+    git -C "$work" checkout -q FETCH_HEAD
+    git -C "$work" submodule update --init --recursive --depth 1
+
+    headers=$(mktemp -d)
+    git -C "$headers" init -q
+    git -C "$headers" remote add origin https://github.com/vapoursynth/vapoursynth.git
+    git -C "$headers" fetch -q --depth 1 origin \
+        c2f5751a412347f306eb7f6a5985dd9a719f3896
+    git -C "$headers" checkout -q FETCH_HEAD
+    mkdir -p "$work/src/vapoursynth"
+    cp "$headers/include/VapourSynth.h" "$headers/include/VSHelper.h" \
+        "$work/src/vapoursynth/"
+
+    cmake -S "$work" -B "$work/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVAPOURSYNTH_INCLUDE_DIR="$work/src/vapoursynth"
+    cmake --build "$work/build" --parallel
+
+    mkdir -p "$plugin_dir/models"
+    cp "$work/build/librealcugannv.so" "$plugin_dir/"
+    curl -L --fail --retry 3 -o "$work/models.zip" \
+        https://github.com/Kiyamou/VapourSynth-RealCUGAN-ncnn-Vulkan/releases/download/r2/models.zip
+    7z x -y -o"$work" "$work/models.zip" >/dev/null
+    cp -r "$work/models-se" "$work/models-pro" "$plugin_dir/models/"
+
+    rm -rf "$work" "$headers"
     trap - EXIT HUP INT TERM
 fi
 

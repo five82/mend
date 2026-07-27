@@ -158,6 +158,37 @@ def ai_temporal(input_clip, model, length):
     )
 
 
+def ai_cugan(input_clip, noise):
+    rgb = core.resize.Bicubic(
+        input_clip,
+        format=vs.RGBS,
+        matrix_in_s="470bg",
+        range_s="limited",
+        range=1,
+        dither_type="error_diffusion",
+    )
+    restored = core.rcnv.RealCUGAN(
+        rgb,
+        scale=2,
+        noise=noise,
+        model=2,
+        tta=0,
+        syncgap=2,
+        gpu_id=0,
+        gpu_thread=2,
+    )
+    return core.resize.Bicubic(
+        restored,
+        width=1440,
+        height=1080,
+        format=vs.YUV420P10,
+        matrix_s="470bg",
+        range_s="full",
+        range=0,
+        dither_type="error_diffusion",
+    )
+
+
 def finish_lines(clip):
     from havsfunc import FastLineDarkenMOD
 
@@ -239,6 +270,8 @@ elif method.startswith("ai-compress"):
     output = ai_temporal(
         restore("fieldmatch"), int(parts[0]), int(parts[1]) if len(parts) == 2 else 15
     )
+elif method.startswith("ai-cugan"):
+    output = ai_cugan(restore("fieldmatch"), int(method.removeprefix("ai-cugan")))
 else:
     output = restore(method)
 

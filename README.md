@@ -6,7 +6,7 @@ Raw MakeMKV rips remain the source of truth. Mend analyzes them and renders shor
 
 ## Setup
 
-Requirements: Debian 13, `uv`, `7zip`, Git, CMake, a C++ compiler, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
+Requirements: Debian 13, `uv`, `7zip`, Git, CMake, curl, a C++ compiler, Vulkan development tools, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
 
 ```bash
 ./scripts/bootstrap-plugins
@@ -125,4 +125,12 @@ uv run python -m mend ai FINGERPRINT \
   --model denoise
 ```
 
-`--model compress1`, `compress2`, and `compress3` test BasicVSR++ compressed-video quality-enhancement models. These are reconstruction experiments and may alter source structure.
+`--model compress1`, `compress2`, and `compress3` test BasicVSR++ compressed-video quality-enhancement models. Append `-long` for extended temporal context.
+
+Anime reconstruction experiments use Real-CUGAN Pro through Vulkan:
+
+- `--model cugan-conservative`
+- `--model cugan-no-denoise`
+- `--model cugan-denoise3x`
+
+The Real-CUGAN plugin requires Vulkan development files and a usable Vulkan device. These are reconstruction experiments and may alter source structure.

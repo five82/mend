@@ -8,6 +8,7 @@ required = {
     "fmtc",
     "mv",
     "neo_f3kdb",
+    "rcnv",
     "rgvs",
     "tivtc",
     "warp",
