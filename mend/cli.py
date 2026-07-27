@@ -14,6 +14,7 @@ import vapoursynth as vs
 FPS_NUM = 60_000
 FPS_DEN = 1_001
 METHODS = ("fieldmatch", "bwdif", "qtgmc")
+SQUARE_PIXEL_METHODS = ("upscale", "finishing")
 
 
 def spindle_cache_dir() -> Path:
@@ -447,7 +448,7 @@ def sample(args: argparse.Namespace) -> int:
             args.duration,
             output,
             args.field_order,
-            "1:1" if method == "upscale" else sample_aspect_ratio,
+            "1:1" if method in SQUARE_PIXEL_METHODS else sample_aspect_ratio,
             stream,
         )
     return 0
@@ -539,6 +540,13 @@ def parser() -> argparse.ArgumentParser:
         help="render the locked 1440x1080 upscale",
     )
     upscale_parser.set_defaults(method="upscale", run=sample)
+
+    finishing_parser = commands.add_parser(
+        "finishing",
+        parents=[sample_options],
+        help="compare line repair, line finishing, and mild debanding",
+    )
+    finishing_parser.set_defaults(method="finishing", run=sample)
     return result
 
 

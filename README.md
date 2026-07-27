@@ -6,7 +6,7 @@ Raw MakeMKV rips remain the source of truth. Mend analyzes them and renders shor
 
 ## Setup
 
-Requirements: Debian 13, `uv`, `7zip`, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
+Requirements: Debian 13, `uv`, `7zip`, Git, CMake, a C++ compiler, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
 
 ```bash
 ./scripts/bootstrap-plugins
@@ -89,7 +89,7 @@ This writes a native-resolution, 59.94p, video-only FFV1 `restore.mkv`. Color me
 
 ## Render the locked 1440x1080 upscale
 
-Apply NNEDI3 after the locked native restoration:
+Apply the locked restoration and finishing profile:
 
 ```bash
 uv run python -m mend upscale FINGERPRINT \
@@ -98,4 +98,17 @@ uv run python -m mend upscale FINGERPRINT \
   --duration 4
 ```
 
-This writes a 1440x1080, square-pixel `upscale.mkv`. The locked profile uses NNEDI3 with 256 neurons and quality 2, followed by Spline36 only for the remaining non-power-of-two scaling.
+This writes a 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile repairs line-doubled fields, processes the upscale at 16-bit with NNEDI3 using 256 neurons and quality 2, applies restrained line finishing, and finishes with mild debanding. The full frame is retained.
+
+## Compare finishing candidates
+
+Compare the approved finishing profile against its individual changes:
+
+```bash
+uv run python -m mend finishing FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 4
+```
+
+This writes a labeled 2x2 `finishing.mkv`: previous V2, line repair only, line finishing only, and the locked combined profile. No branch crops the image.

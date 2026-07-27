@@ -7,8 +7,10 @@ required = {
     "dotkill",
     "fmtc",
     "mv",
+    "neo_f3kdb",
     "rgvs",
     "tivtc",
+    "warp",
     "znedi3",
 }
 installed = {plugin.namespace for plugin in vs.core.plugins()}

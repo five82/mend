@@ -80,6 +80,13 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(args.method, "upscale")
         self.assertIs(args.run, cli.sample)
 
+    def test_finishing_selects_candidate_comparison(self) -> None:
+        args = cli.parser().parse_args(
+            ["finishing", "fingerprint", "--title", "title.mkv", "--start", "60"]
+        )
+        self.assertEqual(args.method, "finishing")
+        self.assertIs(args.run, cli.sample)
+
 
 class ScanTest(unittest.TestCase):
     def test_ranks_problem_windows_and_separates_neighbors(self) -> None:
@@ -191,6 +198,33 @@ class SampleTest(unittest.TestCase):
                 start=1.0,
                 duration=2.0,
                 method="upscale",
+                output=output,
+                field_order="tff",
+            )
+            self.assertEqual(cli.sample(args), 0)
+        self.assertEqual(render.call_args.args[-2], "1:1")
+
+    def test_uses_square_pixels_for_finishing_comparison(self) -> None:
+        title = Path("/source/title.mkv")
+        with (
+            tempfile.TemporaryDirectory() as output,
+            patch("mend.cli.resolve_source", return_value=title),
+            patch("mend.cli.select_title", return_value=title),
+            patch("mend.cli.render_sample") as render,
+            patch(
+                "mend.cli.probe",
+                return_value={
+                    "streams": [{"sample_aspect_ratio": "8:9"}],
+                    "format": {"duration": "100"},
+                },
+            ),
+        ):
+            args = SimpleNamespace(
+                source="source",
+                title=None,
+                start=1.0,
+                duration=2.0,
+                method="finishing",
                 output=output,
                 field_order="tff",
             )

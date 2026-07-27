@@ -80,10 +80,25 @@ def remove_gibbs(clip):
     )
 
 
-def clean():
+def repair_line_doubling(clip):
+    field_based = core.std.SetFieldBased(clip, value=2 if tff else 1)
+    bobbed = core.znedi3.nnedi3(
+        field_based,
+        field=3 if tff else 2,
+        nns=4,
+        qual=2,
+    )
+    first = core.std.SelectEvery(bobbed, cycle=2, offsets=0)
+    second = core.std.SelectEvery(bobbed, cycle=2, offsets=1)
+    return core.std.SetFieldBased(core.std.Merge(first, second), value=0)
+
+
+def clean(input_clip=None):
     from havsfunc import SMDegrain
 
-    output = core.dotkill.DotKillS(restore("fieldmatch"), iterations=1)
+    if input_clip is None:
+        input_clip = restore("fieldmatch")
+    output = core.dotkill.DotKillS(input_clip, iterations=1)
     output = remove_gibbs(deblock(output))
     return SMDegrain(
         output,
@@ -97,11 +112,11 @@ def clean():
     )
 
 
-def upscale():
+def nnedi3_upscale(input_clip):
     from nnedi3_resample import nnedi3_resample
 
     return nnedi3_resample(
-        clean(),
+        input_clip,
         target_width=1440,
         target_height=1080,
         mats="601",
@@ -112,6 +127,59 @@ def upscale():
         fulld=False,
         nns=4,
         mode="znedi3",
+    )
+
+
+def finish_lines(clip):
+    from havsfunc import FastLineDarkenMOD
+
+    darkened = FastLineDarkenMOD(clip, strength=20, protection=6)
+    return core.warp.AWarpSharp2(
+        darkened,
+        blur=4,
+        type=1,
+        depth=3,
+        chroma=0,
+        cplace="mpeg2",
+    )
+
+
+def to_bits(clip, bits):
+    return core.fmtc.bitdepth(clip, bits=bits, dmode=1)
+
+
+def upscale():
+    repaired = clean(repair_line_doubling(restore("fieldmatch")))
+    output = finish_lines(nnedi3_upscale(to_bits(repaired, 16)))
+    return core.neo_f3kdb.Deband(
+        output,
+        preset="low",
+        dynamic_grain=False,
+        keep_tv_range=True,
+        output_depth=10,
+    )
+
+
+def finishing_comparison():
+    previous = nnedi3_upscale(clean())
+    repaired_native = clean(repair_line_doubling(restore("fieldmatch")))
+    repaired = nnedi3_upscale(repaired_native)
+    line_finished = finish_lines(previous)
+
+    branches = [
+        core.text.Text(to_bits(branch, 10), label, alignment=7, scale=2)
+        for branch, label in (
+            (previous, "PREVIOUS V2"),
+            (repaired, "+ LINE-DOUBLE REPAIR"),
+            (line_finished, "+ LINE FINISH"),
+            (upscale(), "LOCKED: ALL + MILD DEBAND"),
+        )
+    ]
+    return core.std.StackVertical(
+        [
+            core.std.StackHorizontal(branches[:2]),
+            core.std.StackHorizontal(branches[2:]),
+        ]
     )
 
 
@@ -134,6 +202,8 @@ elif method == "restore":
     output = clean()
 elif method == "upscale":
     output = upscale()
+elif method == "finishing":
+    output = finishing_comparison()
 else:
     output = restore(method)
 

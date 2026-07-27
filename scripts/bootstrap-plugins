@@ -4,10 +4,12 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$root"
 
-if ! command -v 7z >/dev/null 2>&1; then
-    echo "error: 7z is required (Debian package: 7zip)" >&2
-    exit 1
-fi
+for command in 7z cmake git c++; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "error: $command is required" >&2
+        exit 1
+    fi
+done
 
 uv sync
 uv run vsrepo update
@@ -22,6 +24,25 @@ if [ -d "$bad" ]; then
     rm -rf "$good"
     mv "$bad" "$good"
     sed -i 's/^Version: 3bd542a$/Version: 0+3bd542a/' "$good/METADATA"
+fi
+
+if ! .venv/bin/python -c 'import vapoursynth as vs; vs.core.neo_f3kdb' 2>/dev/null; then
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT HUP INT TERM
+    git -C "$work" init -q
+    git -C "$work" remote add origin \
+        https://github.com/HomeOfAviSynthPlusEvolution/neo_f3kdb.git
+    git -C "$work" fetch -q --depth 1 origin \
+        4a88cc85e23a18acf22c03a5531e51d6e927986f
+    git -C "$work" checkout -q FETCH_HEAD
+    cmake -S "$work" -B "$work/build" \
+        -DENABLE_PAR=OFF -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$work/build" --parallel
+    plugin_dir="$site/vapoursynth/plugins"
+    mkdir -p "$plugin_dir"
+    cp "$work/build/libneo-f3kdb.so" "$plugin_dir/neo-f3kdb.so"
+    rm -rf "$work"
+    trap - EXIT HUP INT TERM
 fi
 
 uv run python scripts/check-plugins.py
