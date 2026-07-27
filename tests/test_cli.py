@@ -87,6 +87,38 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(args.method, "finishing")
         self.assertIs(args.run, cli.sample)
 
+    def test_ai_selects_temporal_restoration_model(self) -> None:
+        args = cli.parser().parse_args(
+            [
+                "ai",
+                "fingerprint",
+                "--title",
+                "title.mkv",
+                "--start",
+                "60",
+                "--model",
+                "compress2",
+            ]
+        )
+        self.assertIs(args.run, cli.sample)
+        self.assertEqual(args.model, "compress2")
+
+    def test_ai_long_selects_extended_temporal_context(self) -> None:
+        args = cli.parser().parse_args(
+            [
+                "ai",
+                "fingerprint",
+                "--title",
+                "title.mkv",
+                "--start",
+                "60",
+                "--model",
+                "compress2-long",
+            ]
+        )
+        self.assertIs(args.run, cli.sample)
+        self.assertEqual(args.model, "compress2-long")
+
 
 class ScanTest(unittest.TestCase):
     def test_ranks_problem_windows_and_separates_neighbors(self) -> None:

@@ -112,3 +112,17 @@ uv run python -m mend finishing FINGERPRINT \
 ```
 
 This writes a labeled 2x2 `finishing.mkv`: previous V2, line repair only, line finishing only, and the locked combined profile. No branch crops the image.
+
+## Test temporal AI restoration
+
+Render BasicVSR++ experiments on the temporal-restored source:
+
+```bash
+uv run python -m mend ai FINGERPRINT \
+  --title TITLE.mkv \
+  --start 60 \
+  --duration 2 \
+  --model denoise
+```
+
+`--model compress1`, `compress2`, and `compress3` test BasicVSR++ compressed-video quality-enhancement models. These are reconstruction experiments and may alter source structure.

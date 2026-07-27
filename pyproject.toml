@@ -4,10 +4,22 @@ version = "0.1.0"
 description = "Video restoration research tools"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "torch>=2.11",
+    "torchvision>=0.26",
     "vapoursynth==78",
     "vapoursynth-dotkill @ git+https://github.com/myrsloik/DotKill.git@6396fb441a9f3b03889fef7be597e68366e161a8",
+    "vsbasicvsrpp==3.0.0",
     "vsrepo==2.0.0",
 ]
 
 [tool.uv]
 package = false
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }

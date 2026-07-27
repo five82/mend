@@ -431,7 +431,20 @@ def sample(args: argparse.Namespace) -> int:
     if args.start + args.duration > source_duration:
         raise ValueError("sample extends past the source duration")
 
-    methods = METHODS if args.method == "all" else (args.method,)
+    method = getattr(args, "method", None)
+    if method is None:
+        model = getattr(args, "model", "denoise")
+        method = {
+            "denoise": "ai-denoise",
+            "denoise-long": "ai-denoise45",
+            "compress1": "ai-compress4",
+            "compress1-long": "ai-compress4-45",
+            "compress2": "ai-compress5",
+            "compress2-long": "ai-compress5-45",
+            "compress3": "ai-compress6",
+            "compress3-long": "ai-compress6-45",
+        }[model]
+    methods = METHODS if method == "all" else (method,)
     output_dir = (
         Path(args.output).expanduser()
         if args.output
@@ -547,6 +560,28 @@ def parser() -> argparse.ArgumentParser:
         help="compare line repair, line finishing, and mild debanding",
     )
     finishing_parser.set_defaults(method="finishing", run=sample)
+
+    ai_parser = commands.add_parser(
+        "ai",
+        parents=[sample_options],
+        help="render a BasicVSR++ temporal restoration experiment",
+    )
+    ai_parser.add_argument(
+        "--model",
+        choices=(
+            "denoise",
+            "denoise-long",
+            "compress1",
+            "compress1-long",
+            "compress2",
+            "compress2-long",
+            "compress3",
+            "compress3-long",
+        ),
+        default="denoise",
+        help="temporal restoration model (default: denoise)",
+    )
+    ai_parser.set_defaults(run=sample)
     return result
 
 

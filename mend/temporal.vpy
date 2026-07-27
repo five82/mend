@@ -130,6 +130,34 @@ def nnedi3_upscale(input_clip):
     )
 
 
+def ai_temporal(input_clip, model, length):
+    from vsbasicvsrpp import basicvsrpp
+
+    rgb = core.resize.Bicubic(
+        input_clip,
+        format=vs.RGBH,
+        matrix_in_s="470bg",
+        range_s="limited",
+        range=1,
+        dither_type="error_diffusion",
+    )
+    restored = basicvsrpp(
+        rgb,
+        model=model,
+        auto_download=True,
+        length=length,
+        cpu_cache=True,
+    )
+    return core.resize.Bicubic(
+        restored,
+        format=vs.YUV420P10,
+        matrix_s="470bg",
+        range_s="full",
+        range=0,
+        dither_type="error_diffusion",
+    )
+
+
 def finish_lines(clip):
     from havsfunc import FastLineDarkenMOD
 
@@ -204,6 +232,13 @@ elif method == "upscale":
     output = upscale()
 elif method == "finishing":
     output = finishing_comparison()
+elif method.startswith("ai-denoise"):
+    output = ai_temporal(restore("fieldmatch"), 9, int(method.removeprefix("ai-denoise") or 15))
+elif method.startswith("ai-compress"):
+    parts = method.removeprefix("ai-compress").split("-", 1)
+    output = ai_temporal(
+        restore("fieldmatch"), int(parts[0]), int(parts[1]) if len(parts) == 2 else 15
+    )
 else:
     output = restore(method)
 
