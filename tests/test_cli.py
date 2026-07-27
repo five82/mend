@@ -73,7 +73,7 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(args.method, "restore")
         self.assertIs(args.run, cli.sample)
 
-    def test_upscale_selects_synchronized_comparison(self) -> None:
+    def test_upscale_selects_locked_profile(self) -> None:
         args = cli.parser().parse_args(
             ["upscale", "fingerprint", "--title", "title.mkv", "--start", "60"]
         )

@@ -97,27 +97,22 @@ def clean():
     )
 
 
-def upscale(name):
-    output = clean()
-    if name == "spline36":
-        return core.resize.Spline36(output, width=1440, height=1080)
-    if name == "nnedi3":
-        from nnedi3_resample import nnedi3_resample
+def upscale():
+    from nnedi3_resample import nnedi3_resample
 
-        return nnedi3_resample(
-            output,
-            target_width=1440,
-            target_height=1080,
-            mats="601",
-            matd="601",
-            cplaces="mpeg2",
-            cplaced="mpeg2",
-            fulls=False,
-            fulld=False,
-            nns=4,
-            mode="znedi3",
-        )
-    raise ValueError(f"unknown upscale method: {name}")
+    return nnedi3_resample(
+        clean(),
+        target_width=1440,
+        target_height=1080,
+        mats="601",
+        matd="601",
+        cplaces="mpeg2",
+        cplaced="mpeg2",
+        fulls=False,
+        fulld=False,
+        nns=4,
+        mode="znedi3",
+    )
 
 
 if method == "comparison":
@@ -138,14 +133,7 @@ elif method == "cleanup":
 elif method == "restore":
     output = clean()
 elif method == "upscale":
-    branches = [
-        core.text.Text(upscale(name), label, alignment=7, scale=2)
-        for name, label in (
-            ("spline36", "SPLINE36"),
-            ("nnedi3", "NNEDI3"),
-        )
-    ]
-    output = core.std.StackHorizontal(branches)
+    output = upscale()
 else:
     output = restore(method)
 

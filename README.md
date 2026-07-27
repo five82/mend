@@ -2,7 +2,7 @@
 
 Mend is a tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
 
-Raw MakeMKV rips remain the source of truth. Mend analyzes them and renders short, lossless restoration and upscale comparisons; it does not publish files into Spindle's cache yet.
+Raw MakeMKV rips remain the source of truth. Mend analyzes them and renders short, lossless restoration fixtures; it does not publish files into Spindle's cache yet.
 
 ## Setup
 
@@ -87,9 +87,9 @@ uv run python -m mend restore FINGERPRINT \
 
 This writes a native-resolution, 59.94p, video-only FFV1 `restore.mkv`. Color metadata and source sample aspect ratio are preserved. These files are research fixtures, not library outputs.
 
-## Compare 1440x1080 upscales
+## Render the locked 1440x1080 upscale
 
-Compare conventional Spline36 scaling against NNEDI3 after the locked native restoration:
+Apply NNEDI3 after the locked native restoration:
 
 ```bash
 uv run python -m mend upscale FINGERPRINT \
@@ -98,4 +98,4 @@ uv run python -m mend upscale FINGERPRINT \
   --duration 4
 ```
 
-This writes a synchronized, square-pixel `upscale.mkv` with Spline36 on the left and NNEDI3 on the right. Upscaling remains a separate research stage; neither method is locked yet.
+This writes a 1440x1080, square-pixel `upscale.mkv`. The locked profile uses NNEDI3 with 256 neurons and quality 2, followed by Spline36 only for the remaining non-power-of-two scaling.

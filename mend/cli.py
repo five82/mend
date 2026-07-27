@@ -536,7 +536,7 @@ def parser() -> argparse.ArgumentParser:
     upscale_parser = commands.add_parser(
         "upscale",
         parents=[sample_options],
-        help="compare 1440x1080 upscale methods",
+        help="render the locked 1440x1080 upscale",
     )
     upscale_parser.set_defaults(method="upscale", run=sample)
     return result
