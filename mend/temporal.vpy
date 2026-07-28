@@ -208,15 +208,7 @@ def to_bits(clip, bits):
 
 
 def upscale():
-    repaired = clean(repair_line_doubling(restore("fieldmatch")))
-    output = finish_lines(nnedi3_upscale(to_bits(repaired, 16)))
-    return core.neo_f3kdb.Deband(
-        output,
-        preset="low",
-        dynamic_grain=False,
-        keep_tv_range=True,
-        output_depth=10,
-    )
+    return ai_cugan(restore("fieldmatch"), 3)
 
 
 def finishing_comparison():
@@ -224,6 +216,13 @@ def finishing_comparison():
     repaired_native = clean(repair_line_doubling(restore("fieldmatch")))
     repaired = nnedi3_upscale(repaired_native)
     line_finished = finish_lines(previous)
+    classical = core.neo_f3kdb.Deband(
+        finish_lines(nnedi3_upscale(to_bits(repaired_native, 16))),
+        preset="low",
+        dynamic_grain=False,
+        keep_tv_range=True,
+        output_depth=10,
+    )
 
     branches = [
         core.text.Text(to_bits(branch, 10), label, alignment=7, scale=2)
@@ -231,7 +230,7 @@ def finishing_comparison():
             (previous, "PREVIOUS V2"),
             (repaired, "+ LINE-DOUBLE REPAIR"),
             (line_finished, "+ LINE FINISH"),
-            (upscale(), "LOCKED: ALL + MILD DEBAND"),
+            (classical, "CLASSICAL FINISH"),
         )
     ]
     return core.std.StackVertical(

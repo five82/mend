@@ -89,7 +89,7 @@ This writes a native-resolution, 59.94p, video-only FFV1 `restore.mkv`. Color me
 
 ## Render the locked 1440x1080 upscale
 
-Apply the locked restoration and finishing profile:
+Apply the locked temporal-preservation and Real-CUGAN reconstruction profile:
 
 ```bash
 uv run python -m mend upscale FINGERPRINT \
@@ -98,11 +98,11 @@ uv run python -m mend upscale FINGERPRINT \
   --duration 4
 ```
 
-This writes a 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile repairs line-doubled fields, processes the upscale at 16-bit with NNEDI3 using 256 neurons and quality 2, applies restrained line finishing, and finishes with mild debanding. The full frame is retained.
+This writes a 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile preserves the mixed 59.94p timing, then reconstructs and upscales with Real-CUGAN Pro denoise3x through Vulkan. The full frame is retained.
 
 ## Compare finishing candidates
 
-Compare the approved finishing profile against its individual changes:
+Compare classical finishing variants without changing the CUGAN profile:
 
 ```bash
 uv run python -m mend finishing FINGERPRINT \
@@ -111,7 +111,7 @@ uv run python -m mend finishing FINGERPRINT \
   --duration 4
 ```
 
-This writes a labeled 2x2 `finishing.mkv`: previous V2, line repair only, line finishing only, and the locked combined profile. No branch crops the image.
+This writes a labeled 2x2 `finishing.mkv`: previous V2, line repair only, line finishing only, and the combined classical profile. No branch crops the image.
 
 ## Test temporal AI restoration
 
