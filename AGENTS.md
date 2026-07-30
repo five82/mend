@@ -2,7 +2,6 @@
 
 ## Ground rules
 
-- Do not run `git commit` or `git push` unless explicitly asked.
 - Follow the toolchain and conventions established in the repository. Do not assume a language or introduce foundational dependencies without agreement.
 - Before handing work back, run the relevant formatting, lint, and test checks, or explain why you could not.
 - Finish the work you start; ask before dropping scope or leaving TODOs.
