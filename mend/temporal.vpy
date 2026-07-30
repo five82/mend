@@ -13,37 +13,38 @@ clip = core.std.SetFieldBased(clip, value=2 if tff else 1)
 bob = core.bwdif.Bwdif(clip, field=3 if tff else 2)
 
 
+def tfm_output(fallback, field):
+    return core.tivtc.TFM(
+        clip,
+        order=1 if tff else 0,
+        field=field,
+        mode=0 if field == (1 if tff else 0) else 4,
+        PP=6,
+        mChroma=0,
+        cthresh=12,
+        chroma=1,
+        micmatching=0,
+        clip2=fallback,
+    )
+
+
+def fieldmatch():
+    first_fallback = core.std.SelectEvery(bob, cycle=2, offsets=0)
+    second_fallback = core.std.SelectEvery(bob, cycle=2, offsets=1)
+    first = tfm_output(first_fallback, 1 if tff else 0)
+    second = tfm_output(second_fallback, 0 if tff else 1)
+    return core.std.Interleave([first, second])
+
+
 def restore(name):
     if name == "bwdif":
         return bob
     if name == "fieldmatch":
-        first_fallback = core.std.SelectEvery(bob, cycle=2, offsets=0)
-        second_fallback = core.std.SelectEvery(bob, cycle=2, offsets=1)
-        first = core.tivtc.TFM(
-            clip,
-            order=1 if tff else 0,
-            field=1 if tff else 0,
-            mode=0,
-            PP=6,
-            mChroma=0,
-            cthresh=12,
-            chroma=1,
-            micmatching=0,
-            clip2=first_fallback,
-        )
-        second = core.tivtc.TFM(
-            clip,
-            order=1 if tff else 0,
-            field=0 if tff else 1,
-            mode=4,
-            PP=6,
-            mChroma=0,
-            cthresh=12,
-            chroma=1,
-            micmatching=0,
-            clip2=second_fallback,
-        )
-        return core.std.Interleave([first, second])
+        return fieldmatch()
+    if name == "ivtc":
+        fallback = core.std.SelectEvery(bob, cycle=2, offsets=0)
+        matched = tfm_output(fallback, 1 if tff else 0)
+        return core.tivtc.TDecimate(matched, mode=1)
     if name == "qtgmc":
         from havsfunc import QTGMC
 
@@ -208,7 +209,7 @@ def to_bits(clip, bits):
 
 
 def upscale():
-    return ai_cugan(restore("fieldmatch"), 3)
+    return ai_cugan(restore("ivtc"), 3)
 
 
 def finishing_comparison():

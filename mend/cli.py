@@ -12,6 +12,7 @@ from pathlib import Path
 import vapoursynth as vs
 
 FPS_NUM = 60_000
+FILM_FPS_NUM = 24_000
 FPS_DEN = 1_001
 METHODS = ("fieldmatch", "bwdif", "qtgmc")
 SQUARE_PIXEL_METHODS = ("upscale", "finishing", "ai-cugan-1", "ai-cugan0", "ai-cugan3")
@@ -327,8 +328,9 @@ def render_sample(
     sample_aspect_ratio: str,
     color_metadata: dict,
 ) -> None:
-    start_frame = round(start * FPS_NUM / FPS_DEN)
-    frame_count = round(duration * FPS_NUM / FPS_DEN)
+    fps_num = FILM_FPS_NUM if method == "upscale" else FPS_NUM
+    start_frame = round(start * fps_num / FPS_DEN)
+    frame_count = round(duration * fps_num / FPS_DEN)
     end_frame = start_frame + frame_count - 1
     script = Path(__file__).with_name("temporal.vpy")
     vspipe = Path(sys.executable).with_name("vspipe")
