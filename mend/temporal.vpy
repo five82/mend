@@ -209,7 +209,9 @@ def to_bits(clip, bits):
 
 
 def upscale():
-    return ai_cugan(restore("ivtc"), 3)
+    return ai_cugan(
+        core.std.CropRel(restore("ivtc"), left=10, right=10), 3
+    )
 
 
 def finishing_comparison():

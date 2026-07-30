@@ -98,7 +98,7 @@ uv run python -m mend upscale FINGERPRINT \
   --duration 4
 ```
 
-This writes a fixed-rate 23.976 fps, 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile restores film cadence, then reconstructs and upscales with Real-CUGAN Pro denoise3x through Vulkan. The full frame is retained.
+This writes a fixed-rate 23.976 fps, 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile restores film cadence, removes 10 pixels from each ragged horizontal mastering edge, then reconstructs and upscales with Real-CUGAN Pro denoise3x through Vulkan. The vertical frame is retained.
 
 ## Compare finishing candidates
 
