@@ -2,7 +2,7 @@
 
 Mend is a tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
 
-Raw MakeMKV rips remain the source of truth. Mend analyzes them and renders short, lossless restoration fixtures; it does not publish files into Spindle's cache yet.
+Raw MakeMKV rips remain the source of truth. Mend analyzes them, renders short lossless restoration fixtures, and can publish a full restoration as a separate Spindle rip-cache entry.
 
 ## Setup
 
@@ -99,6 +99,16 @@ uv run python -m mend upscale FINGERPRINT \
 ```
 
 This writes a fixed-rate 23.976 fps, 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile restores film cadence, removes 10 pixels from each ragged horizontal mastering edge, then reconstructs and upscales with Real-CUGAN Pro denoise3x through Vulkan. The vertical frame is retained.
+
+## Restore and hand off a full disc
+
+Process every episode in a Spindle rip-cache entry with the locked upscale profile, publish the results as a distinct cache entry, and queue that derivative through Spindle's normal cached-rip workflow:
+
+```bash
+uv run python -m mend handoff FINGERPRINT
+```
+
+Mend preserves the source audio, subtitle tracks, chapters, attachments, and track metadata around lossless FFV1 video. Completed titles in an interrupted handoff are reused on the next run. The original MakeMKV cache entry is never modified.
 
 ## Compare finishing candidates
 
