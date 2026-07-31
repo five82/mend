@@ -1,146 +1,74 @@
-# mend
+# Mend
 
-Mend is a tool for restoring badly mastered NTSC animation DVDs before Spindle's AV1 encode. The current scope is the first ten seasons of a 1989 prime time long-running, traditionally animated TV series.
+Mend restores supported NTSC animation DVDs before Spindle's AV1 encode. Its current profile is locked to the first ten seasons of a prime time long-running, traditionally animated 1989 TV series.
 
-Raw MakeMKV rips remain the source of truth. Mend analyzes them, renders short lossless restoration fixtures, and can publish a full restoration as a separate Spindle rip-cache entry.
+Raw MakeMKV rips remain the source of truth. Mend writes each restoration to a separate Spindle rip-cache entry and returns that derivative to Spindle's normal processing pipeline. It never modifies the original rip.
 
-## Setup
+## Requirements
 
-Requirements: Debian 13, `uv`, `7zip`, Git, CMake, curl, a C++ compiler, Vulkan development tools, the existing custom FFmpeg/ffprobe build, and mkvtoolnix. Mend does not require an FFmpeg rebuild.
+Mend currently targets Debian 13 with an NVIDIA Vulkan device. It requires:
 
-```bash
-./scripts/bootstrap-plugins
-```
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- Spindle with fingerprint-based `cache process` selection
+- The existing custom FFmpeg and ffprobe build
+- mkvtoolnix
+- `7z`, CMake, curl, Git, a C++ compiler, `glslangValidator`, and pkg-config
+- Vulkan development files
 
-The script creates a uv environment and installs the VapourSynth source, field-matching, deinterlacing, dot-crawl, denoising, and masking plugins.
+The Debian build dependencies include `p7zip-full`, `cmake`, `curl`, `git`, `g++`, `glslang-tools`, `pkg-config`, and `libvulkan-dev`.
 
-## Analyze a Spindle rip
+## Install
 
-Pass a cache fingerprint prefix, cache directory, or MKV path:
-
-```bash
-uv run python -m mend analyze FINGERPRINT
-uv run python -m mend analyze FINGERPRINT --json
-```
-
-Analysis reports both coded MPEG-2 frames and the 29.97 fps display stream reconstructed from repeat-field flags. This distinction is required for MakeMKV's variable-frame-rate MKVs.
-
-## Find temporal problem areas
-
-Rank windows containing video-rate cadence, interlace evidence, or repeated fields:
+From a Mend checkout:
 
 ```bash
-uv run python -m mend scan FINGERPRINT --title TITLE.mkv
+uv tool install .
+mend setup
 ```
 
-Omit `--title` to scan every MKV in the cache entry. Use the reported start times with `mend compare`; `--window`, `--count`, and `--json` control the scan output. Ranking is a fixture-selection heuristic, not an automatic restoration decision.
+`uv tool install` creates an isolated Python environment and exposes the `mend` command. `mend setup` registers that environment as the active VapourSynth runtime, installs BestSource, Bwdif, and TIVTC into it, then builds and installs the pinned Real-CUGAN Vulkan plugin and models.
 
-## Render temporal samples
+To reinstall after updating the checkout:
 
 ```bash
-uv run python -m mend sample FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 10
+uv tool install --force .
+mend setup
 ```
 
-This writes three 59.94p, video-only FFV1 samples under `~/.local/share/mend/samples/`:
+## Restore and hand off a disc
 
-- `fieldmatch.mkv`: two-parity field matching, with BWDIF only for unmatched combed frames
-- `bwdif.mkv`: full BWDIF bob
-- `qtgmc.mkv`: QTGMC Fast with source matching
-
-Select one method with `--method`. For frame-synchronized inspection, render all three methods side by side with embedded labels:
+Pass a unique prefix of the source entry's Spindle cache fingerprint:
 
 ```bash
-uv run python -m mend compare FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 10
+mend handoff FINGERPRINT
 ```
 
-The comparison is written as `comparison.mkv` in the same sample directory. Research on the initial disc selected field matching with selective BWDIF fallback as the temporal baseline: it preserves intact film frames while retaining unique field-time motion.
+Mend:
 
-## Compare native-resolution cleanup
+1. Validates the cached RipSpec, episode-to-title mapping, and NTSC DVD source format.
+2. Restores every episode to lossless 10-bit FFV1 at 1440x1080, square-pixel, progressive 23.976 fps.
+3. Preserves the source audio, subtitle tracks, chapters, attachments, and relevant track metadata.
+4. Validates every completed title before publishing anything to Spindle's rip cache.
+5. Publishes a deterministic derivative with a fresh RipSpec and queues it with `spindle cache process`.
 
-With temporal restoration held constant, compare no cleanup against the locked animation-restoration chain:
+The locked profile restores film cadence, removes the 10-pixel ragged mastering edge from each horizontal side, and reconstructs the image with Real-CUGAN Pro denoise3x through Vulkan. The vertical frame is retained.
+
+Interrupted work is kept under `~/.cache/mend/handoffs/`. Run the same command again to validate and reuse completed titles. Published derivatives remain ordinary Spindle rip-cache entries and are managed by Spindle's normal cache size and pruning policy.
+
+## Development
+
+Create the project environment and install the native plugins:
 
 ```bash
-uv run python -m mend cleanup FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 10
+uv sync
+uv run mend setup
 ```
 
-The restoration applies spatial dot-crawl removal, Deblock Q18, edge-masked Gibbs-noise cleanup, and motion-compensated luma denoising. Chroma is excluded from temporal denoising. This writes `cleanup.mkv` in the sample directory.
-
-## Render the locked native restoration
-
-Render field matching with selective BWDIF fallback followed by the locked animation-restoration chain:
+Run the checks:
 
 ```bash
-uv run python -m mend restore FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 10
+uvx ruff format --check mend tests
+uvx ruff check mend tests
+uv run python -m unittest discover -s tests
+uv run python -m mend.check_plugins
 ```
-
-This writes a native-resolution, 59.94p, video-only FFV1 `restore.mkv`. Color metadata and source sample aspect ratio are preserved. These files are research fixtures, not library outputs.
-
-## Render the locked 1440x1080 upscale
-
-Apply the locked temporal-preservation and Real-CUGAN reconstruction profile:
-
-```bash
-uv run python -m mend upscale FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 4
-```
-
-This writes a fixed-rate 23.976 fps, 10-bit, 1440x1080, square-pixel `upscale.mkv`. The locked profile restores film cadence, removes 10 pixels from each ragged horizontal mastering edge, then reconstructs and upscales with Real-CUGAN Pro denoise3x through Vulkan. The vertical frame is retained.
-
-## Restore and hand off a full disc
-
-Process every episode in a Spindle rip-cache entry with the locked upscale profile, publish the results as a distinct cache entry, and queue that derivative through Spindle's normal cached-rip workflow:
-
-```bash
-uv run python -m mend handoff FINGERPRINT
-```
-
-Mend preserves the source audio, subtitle tracks, chapters, attachments, and track metadata around lossless FFV1 video. Completed titles in an interrupted handoff are reused on the next run. The original MakeMKV cache entry is never modified.
-
-## Compare finishing candidates
-
-Compare classical finishing variants without changing the CUGAN profile:
-
-```bash
-uv run python -m mend finishing FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 4
-```
-
-This writes a labeled 2x2 `finishing.mkv`: previous V2, line repair only, line finishing only, and the combined classical profile. No branch crops the image.
-
-## Test temporal AI restoration
-
-Render BasicVSR++ experiments on the temporal-restored source:
-
-```bash
-uv run python -m mend ai FINGERPRINT \
-  --title TITLE.mkv \
-  --start 60 \
-  --duration 2 \
-  --model denoise
-```
-
-`--model compress1`, `compress2`, and `compress3` test BasicVSR++ compressed-video quality-enhancement models. Append `-long` for extended temporal context.
-
-Anime reconstruction experiments use Real-CUGAN Pro through Vulkan:
-
-- `--model cugan-conservative`
-- `--model cugan-no-denoise`
-- `--model cugan-denoise3x`
-
-The Real-CUGAN plugin requires Vulkan development files and a usable Vulkan device. These are reconstruction experiments and may alter source structure.

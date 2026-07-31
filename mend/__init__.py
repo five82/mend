@@ -1,1 +1,1 @@
-"""Mend video restoration research tools."""
+"""Restore supported NTSC animation DVDs for Spindle."""

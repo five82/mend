@@ -30,100 +30,31 @@ class ResolveSourceTest(unittest.TestCase):
                 cli.resolve_source("abc")
 
 
-class SourceFilesTest(unittest.TestCase):
-    def test_lists_only_top_level_mkvs_in_name_order(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / "b.mkv").touch()
-            (root / "a.mkv").touch()
-            (root / "metadata.json").touch()
-            self.assertEqual(
-                [path.name for path in cli.source_files(root)], ["a.mkv", "b.mkv"]
-            )
-
-    def test_requires_title_when_directory_has_multiple_files(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / "a.mkv").touch()
-            (root / "b.mkv").touch()
-            with self.assertRaisesRegex(ValueError, "--title is required"):
-                cli.select_title(root, None)
-            self.assertEqual(cli.select_title(root, "b").name, "b.mkv")
-
-
 class ParserTest(unittest.TestCase):
-    def test_compare_selects_synchronized_comparison(self) -> None:
-        args = cli.parser().parse_args(
-            ["compare", "fingerprint", "--title", "title.mkv", "--start", "60"]
-        )
-        self.assertEqual(args.method, "comparison")
-        self.assertEqual(args.duration, 10.0)
-        self.assertIs(args.run, cli.sample)
-
-    def test_cleanup_selects_locked_profile_comparison(self) -> None:
-        args = cli.parser().parse_args(
-            ["cleanup", "fingerprint", "--title", "title.mkv", "--start", "60"]
-        )
-        self.assertEqual(args.method, "cleanup")
-        self.assertIs(args.run, cli.sample)
-
-    def test_restore_selects_locked_native_profile(self) -> None:
-        args = cli.parser().parse_args(
-            ["restore", "fingerprint", "--title", "title.mkv", "--start", "60"]
-        )
-        self.assertEqual(args.method, "restore")
-        self.assertIs(args.run, cli.sample)
-
-    def test_upscale_selects_locked_profile(self) -> None:
-        args = cli.parser().parse_args(
-            ["upscale", "fingerprint", "--title", "title.mkv", "--start", "60"]
-        )
-        self.assertEqual(args.method, "upscale")
-        self.assertIs(args.run, cli.sample)
-
-    def test_finishing_selects_candidate_comparison(self) -> None:
-        args = cli.parser().parse_args(
-            ["finishing", "fingerprint", "--title", "title.mkv", "--start", "60"]
-        )
-        self.assertEqual(args.method, "finishing")
-        self.assertIs(args.run, cli.sample)
-
-    def test_ai_selects_temporal_restoration_model(self) -> None:
-        args = cli.parser().parse_args(
-            [
-                "ai",
-                "fingerprint",
-                "--title",
-                "title.mkv",
-                "--start",
-                "60",
-                "--model",
-                "compress2",
-            ]
-        )
-        self.assertIs(args.run, cli.sample)
-        self.assertEqual(args.model, "compress2")
-
-    def test_ai_long_selects_extended_temporal_context(self) -> None:
-        args = cli.parser().parse_args(
-            [
-                "ai",
-                "fingerprint",
-                "--title",
-                "title.mkv",
-                "--start",
-                "60",
-                "--model",
-                "compress2-long",
-            ]
-        )
-        self.assertIs(args.run, cli.sample)
-        self.assertEqual(args.model, "compress2-long")
+    def test_setup_selects_native_plugin_install(self) -> None:
+        args = cli.parser().parse_args(["setup"])
+        self.assertIs(args.run, cli.setup)
 
     def test_handoff_selects_spindle_publication(self) -> None:
         args = cli.parser().parse_args(["handoff", "fingerprint"])
         self.assertEqual(args.source, "fingerprint")
         self.assertIs(args.run, cli.handoff)
+
+
+class SetupTest(unittest.TestCase):
+    def test_installs_plugins_in_current_environment(self) -> None:
+        with (
+            patch("mend.cli.sys.prefix", "/tool/mend"),
+            patch("mend.cli.subprocess.run") as run,
+        ):
+            self.assertEqual(cli.setup(SimpleNamespace()), 0)
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "sh")
+        self.assertEqual(Path(command[1]).name, "bootstrap-plugins")
+        self.assertTrue(Path(command[1]).is_file())
+        self.assertEqual(run.call_args.kwargs["env"]["MEND_ENV"], "/tool/mend")
+        self.assertTrue(run.call_args.kwargs["check"])
 
 
 class HandoffTest(unittest.TestCase):
@@ -173,6 +104,25 @@ class HandoffTest(unittest.TestCase):
         )
         self.assertEqual(validate.call_count, 2)
 
+    def test_rejects_wrong_source_video_format(self) -> None:
+        probe = {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 1920,
+                    "height": 1080,
+                    "sample_aspect_ratio": "1:1",
+                },
+                {"codec_type": "audio"},
+            ]
+        }
+        with (
+            patch("mend.cli.probe_container", return_value=probe),
+            self.assertRaisesRegex(ValueError, "supported NTSC DVD format"),
+        ):
+            cli.validate_handoff_source_file(Path("episode.mkv"))
+
     def test_builds_fresh_derived_ripspec(self) -> None:
         metadata = {
             "fingerprint": "a" * 64,
@@ -190,6 +140,32 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual(envelope["fingerprint"], derived)
         self.assertEqual(envelope["assets"], {})
         self.assertEqual(envelope["attributes"], {})
+
+    def test_maps_ntsc_color_metadata_to_matroska_properties(self) -> None:
+        self.assertEqual(
+            cli.matroska_color_properties(
+                {
+                    "color_space": "smpte170m",
+                    "color_range": "tv",
+                    "color_transfer": "smpte170m",
+                    "color_primaries": "smpte170m",
+                }
+            ),
+            [
+                "--set",
+                "color-matrix-coefficients=6",
+                "--set",
+                "color-range=1",
+                "--set",
+                "color-transfer-characteristics=6",
+                "--set",
+                "color-primaries=6",
+            ],
+        )
+
+    def test_rejects_unvalidated_color_metadata(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported color_space"):
+            cli.matroska_color_properties({"color_space": "bt709"})
 
     def test_validates_lossless_output_and_preserved_tracks(self) -> None:
         output_probe = {
@@ -261,7 +237,7 @@ class HandoffTest(unittest.TestCase):
                 "metadata_json": "{}",
             }
 
-            def render(_source, output, _fingerprint):
+            def render(_source, output):
                 output.write_bytes(b"restored")
 
             with (
@@ -302,164 +278,6 @@ class HandoffTest(unittest.TestCase):
         run.assert_called_once_with(
             ["/bin/spindle", "cache", "process", derived], check=False
         )
-
-
-class ScanTest(unittest.TestCase):
-    def test_ranks_problem_windows_and_separates_neighbors(self) -> None:
-        lines = []
-        for index, frames, interlaced, repeated in (
-            (0, 240, 0, 0),
-            (1, 300, 300, 0),
-            (2, 300, 300, 0),
-            (4, 250, 0, 250),
-        ):
-            for frame in range(frames):
-                lines.extend(
-                    [
-                        f"frame:{frame} pts_time:{index * 10 + frame / 30}",
-                        "lavfi.idet.multiple.current_frame="
-                        + ("tff" if frame < interlaced else "progressive"),
-                        "lavfi.idet.repeated.current_frame="
-                        + ("top" if frame < repeated else "neither"),
-                        "lavfi.scd.score=0.000",
-                    ]
-                )
-
-        candidates = cli.rank_scan_metadata(lines, duration=100, window=10, count=2)
-        self.assertEqual(
-            [candidate["start_seconds"] for candidate in candidates], [10, 40]
-        )
-        self.assertAlmostEqual(candidates[0]["cadence_excess_percent"], 25.125)
-        self.assertEqual(candidates[0]["interlaced_percent"], 100)
-
-
-class SampleTest(unittest.TestCase):
-    def test_maps_ntsc_color_metadata_to_matroska_properties(self) -> None:
-        self.assertEqual(
-            cli.matroska_color_properties(
-                {
-                    "color_space": "smpte170m",
-                    "color_range": "tv",
-                    "color_transfer": "smpte170m",
-                    "color_primaries": "smpte170m",
-                }
-            ),
-            [
-                "--set",
-                "color-matrix-coefficients=6",
-                "--set",
-                "color-range=1",
-                "--set",
-                "color-transfer-characteristics=6",
-                "--set",
-                "color-primaries=6",
-            ],
-        )
-
-    def test_rejects_unvalidated_color_metadata(self) -> None:
-        with self.assertRaisesRegex(ValueError, "unsupported color_space"):
-            cli.matroska_color_properties({"color_space": "bt709"})
-
-    def test_preserves_source_sample_aspect_ratio(self) -> None:
-        title = Path("/source/title.mkv")
-        with (
-            tempfile.TemporaryDirectory() as output,
-            patch("mend.cli.resolve_source", return_value=title),
-            patch("mend.cli.select_title", return_value=title),
-            patch("mend.cli.render_sample") as render,
-            patch(
-                "mend.cli.probe",
-                return_value={
-                    "streams": [
-                        {
-                            "sample_aspect_ratio": "8:9",
-                            "color_space": "smpte170m",
-                        }
-                    ],
-                    "format": {"duration": "100"},
-                },
-            ),
-        ):
-            args = SimpleNamespace(
-                source="source",
-                title=None,
-                start=1.0,
-                duration=2.0,
-                method="comparison",
-                output=output,
-                field_order="tff",
-            )
-            self.assertEqual(cli.sample(args), 0)
-        self.assertEqual(render.call_args.args[-2], "8:9")
-        self.assertEqual(render.call_args.args[-1]["color_space"], "smpte170m")
-
-    def test_uses_square_pixels_for_upscale(self) -> None:
-        title = Path("/source/title.mkv")
-        with (
-            tempfile.TemporaryDirectory() as output,
-            patch("mend.cli.resolve_source", return_value=title),
-            patch("mend.cli.select_title", return_value=title),
-            patch("mend.cli.render_sample") as render,
-            patch(
-                "mend.cli.probe",
-                return_value={
-                    "streams": [{"sample_aspect_ratio": "8:9"}],
-                    "format": {"duration": "100"},
-                },
-            ),
-        ):
-            args = SimpleNamespace(
-                source="source",
-                title=None,
-                start=1.0,
-                duration=2.0,
-                method="upscale",
-                output=output,
-                field_order="tff",
-            )
-            self.assertEqual(cli.sample(args), 0)
-        self.assertEqual(render.call_args.args[-2], "1:1")
-
-    def test_uses_square_pixels_for_finishing_comparison(self) -> None:
-        title = Path("/source/title.mkv")
-        with (
-            tempfile.TemporaryDirectory() as output,
-            patch("mend.cli.resolve_source", return_value=title),
-            patch("mend.cli.select_title", return_value=title),
-            patch("mend.cli.render_sample") as render,
-            patch(
-                "mend.cli.probe",
-                return_value={
-                    "streams": [{"sample_aspect_ratio": "8:9"}],
-                    "format": {"duration": "100"},
-                },
-            ),
-        ):
-            args = SimpleNamespace(
-                source="source",
-                title=None,
-                start=1.0,
-                duration=2.0,
-                method="finishing",
-                output=output,
-                field_order="tff",
-            )
-            self.assertEqual(cli.sample(args), 0)
-        self.assertEqual(render.call_args.args[-2], "1:1")
-
-
-class AnalyzeFileTest(unittest.TestCase):
-    @patch("mend.cli.frame_counts", return_value=(33_725, 41_270))
-    @patch("mend.cli.probe")
-    def test_reports_coded_excess_from_source_duration(self, probe, _counts) -> None:
-        probe.return_value = {
-            "streams": [{"codec_name": "mpeg2video", "width": 720, "height": 480}],
-            "format": {"duration": "1377.042", "size": "1018186285"},
-        }
-        result = cli.analyze_file(Path("episode.mkv"))
-        self.assertEqual(result["rff_display_frames"], 41_270)
-        self.assertAlmostEqual(result["rff_duration_seconds"], 1377.042333, places=5)
-        self.assertAlmostEqual(result["coded_excess_percent"], 2.147, places=2)
 
 
 if __name__ == "__main__":

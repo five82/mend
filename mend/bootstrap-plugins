@@ -1,0 +1,63 @@
+#!/bin/sh
+set -eu
+
+: "${MEND_ENV:?MEND_ENV must name Mend's Python environment}"
+python="$MEND_ENV/bin/python"
+vsrepo="$MEND_ENV/bin/vsrepo"
+
+for command in 7z cmake curl git c++ glslangValidator pkg-config; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "error: $command is required" >&2
+        exit 1
+    fi
+done
+if ! pkg-config --exists vulkan; then
+    echo "error: Vulkan development files are required (Debian package: libvulkan-dev)" >&2
+    exit 1
+fi
+
+"$MEND_ENV/bin/vapoursynth" config
+"$vsrepo" update
+"$vsrepo" install bs bwdif tivtc
+site=$("$python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+plugin_dir="$site/vapoursynth/plugins"
+
+if ! "$python" -c 'import vapoursynth as vs; vs.core.rcnv' 2>/dev/null; then
+    work=$(mktemp -d)
+    headers=$(mktemp -d)
+    trap 'rm -rf "$work" "$headers"' EXIT HUP INT TERM
+
+    git -C "$work" init -q
+    git -C "$work" remote add origin \
+        https://github.com/Kiyamou/VapourSynth-RealCUGAN-ncnn-Vulkan.git
+    git -C "$work" fetch -q --depth 1 origin \
+        4db9493b12aab1eb089db6537d20e7872efae9c0
+    git -C "$work" checkout -q FETCH_HEAD
+    git -C "$work" submodule update --init --recursive --depth 1
+
+    git -C "$headers" init -q
+    git -C "$headers" remote add origin https://github.com/vapoursynth/vapoursynth.git
+    git -C "$headers" fetch -q --depth 1 origin \
+        c2f5751a412347f306eb7f6a5985dd9a719f3896
+    git -C "$headers" checkout -q FETCH_HEAD
+    mkdir -p "$work/src/vapoursynth"
+    cp "$headers/include/VapourSynth.h" "$headers/include/VSHelper.h" \
+        "$work/src/vapoursynth/"
+
+    cmake -S "$work" -B "$work/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVAPOURSYNTH_INCLUDE_DIR="$work/src/vapoursynth"
+    cmake --build "$work/build" --parallel
+
+    mkdir -p "$plugin_dir/models"
+    cp "$work/build/librealcugannv.so" "$plugin_dir/"
+    curl -L --fail --retry 3 -o "$work/models.zip" \
+        https://github.com/Kiyamou/VapourSynth-RealCUGAN-ncnn-Vulkan/releases/download/r2/models.zip
+    7z x -y -o"$work" "$work/models.zip" >/dev/null
+    cp -r "$work/models-se" "$work/models-pro" "$plugin_dir/models/"
+
+    rm -rf "$work" "$headers"
+    trap - EXIT HUP INT TERM
+fi
+
+"$python" -m mend.check_plugins

@@ -6,20 +6,12 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
-from collections import defaultdict
-from collections.abc import Iterable
 from datetime import UTC, datetime
 from fractions import Fraction
 from pathlib import Path
 
-import vapoursynth as vs
-
-FPS_NUM = 60_000
 FILM_FPS_NUM = 24_000
 FPS_DEN = 1_001
-METHODS = ("fieldmatch", "bwdif", "qtgmc")
-SQUARE_PIXEL_METHODS = ("upscale", "finishing", "ai-cugan-1", "ai-cugan0", "ai-cugan3")
 # Bump when the locked full-disc output changes; this versions its cache identity.
 HANDOFF_PROFILE = "simpsons-dvd-v1"
 SPINDLE_CACHE_VERSION = 1
@@ -50,89 +42,10 @@ def resolve_source(value: str) -> Path:
 
 
 def source_files(source: Path) -> list[Path]:
-    if source.is_file():
-        if source.suffix.lower() != ".mkv":
-            raise ValueError(f"source is not an MKV: {source}")
-        return [source]
     files = sorted(source.glob("*.mkv"))
     if not files:
         raise ValueError(f"no MKV files in {source}")
     return files
-
-
-def select_title(source: Path, title: str | None) -> Path:
-    files = source_files(source)
-    if title is None:
-        if len(files) != 1:
-            names = ", ".join(path.name for path in files)
-            raise ValueError(f"--title is required; choices: {names}")
-        return files[0]
-    matches = [path for path in files if path.name == title or path.stem == title]
-    if len(matches) != 1:
-        raise ValueError(f"title not found: {title}")
-    return matches[0]
-
-
-def probe(path: Path) -> dict:
-    command = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=codec_name,width,height,sample_aspect_ratio,display_aspect_ratio,field_order,r_frame_rate,avg_frame_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries,chroma_location:format=duration,size",
-        "-of",
-        "json",
-        str(path),
-    ]
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
-    return json.loads(result.stdout)
-
-
-def frame_counts(path: Path) -> tuple[int, int]:
-    coded = vs.core.bs.VideoSource(
-        str(path), rff=False, cachemode=1, showprogress=False
-    )
-    displayed = vs.core.bs.VideoSource(
-        str(path), rff=True, cachemode=1, showprogress=False
-    )
-    return coded.num_frames, displayed.num_frames
-
-
-def analyze_file(path: Path) -> dict:
-    data = probe(path)
-    stream = data["streams"][0]
-    coded, displayed = frame_counts(path)
-    duration = float(data["format"]["duration"])
-    expected_film = duration * 24_000 / 1_001
-    return {
-        "name": path.name,
-        "path": str(path),
-        "duration_seconds": duration,
-        "size_bytes": int(data["format"]["size"]),
-        "codec": stream.get("codec_name"),
-        "width": stream.get("width"),
-        "height": stream.get("height"),
-        "sample_aspect_ratio": stream.get("sample_aspect_ratio"),
-        "display_aspect_ratio": stream.get("display_aspect_ratio"),
-        "field_order": stream.get("field_order"),
-        "pixel_format": stream.get("pix_fmt"),
-        "color": {
-            key: stream.get(key)
-            for key in (
-                "color_range",
-                "color_space",
-                "color_transfer",
-                "color_primaries",
-            )
-        },
-        "coded_frames": coded,
-        "rff_display_frames": displayed,
-        "rff_duration_seconds": displayed * 1_001 / 30_000,
-        "expected_23_976_frames": expected_film,
-        "coded_excess_percent": (coded / expected_film - 1) * 100,
-    }
 
 
 def read_cache_metadata(source: Path) -> dict | None:
@@ -150,7 +63,7 @@ def probe_container(path: Path) -> dict:
         "-v",
         "error",
         "-show_entries",
-        "stream=index,codec_name,codec_type,width,height,sample_aspect_ratio,field_order,r_frame_rate,avg_frame_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries:format=duration,size",
+        "stream=index,codec_name,codec_type,width,height,sample_aspect_ratio,field_order,r_frame_rate,avg_frame_rate,pix_fmt,color_range,color_space,color_transfer,color_primaries,chroma_location:format=duration,size",
         "-of",
         "json",
         str(path),
@@ -300,172 +213,6 @@ def clean_handoff_metadata(
     }
 
 
-def analyze(args: argparse.Namespace) -> int:
-    source = resolve_source(args.source)
-    result = {
-        "source": str(source),
-        "cache_metadata": read_cache_metadata(source),
-        "files": [analyze_file(path) for path in source_files(source)],
-    }
-    if args.json:
-        print(json.dumps(result, indent=2))
-        return 0
-
-    metadata = result["cache_metadata"] or {}
-    print(metadata.get("disc_title", source.name))
-    print(f"Source: {source}")
-    print()
-    print(
-        f"{'Title':<14} {'Duration':>9} {'Coded':>8} {'RFF':>8} {'Film exp.':>10} {'Excess':>8} {'Field':>8}"
-    )
-    for item in result["files"]:
-        minutes, seconds = divmod(round(item["duration_seconds"]), 60)
-        print(
-            f"{item['name']:<14} {minutes:02d}:{seconds:02d}"
-            f" {item['coded_frames']:>8} {item['rff_display_frames']:>8}"
-            f" {item['expected_23_976_frames']:>10.1f}"
-            f" {item['coded_excess_percent']:>7.2f}% {item['field_order']:>8}"
-        )
-    return 0
-
-
-def rank_scan_metadata(
-    lines: Iterable[str], duration: float, window: float, count: int
-) -> list[dict]:
-    bins = defaultdict(lambda: {"frames": 0, "interlaced": 0, "repeated": 0, "cuts": 0})
-    current = None
-    for line in lines:
-        if line.startswith("frame:"):
-            match = re.search(r"\bpts_time:([^ ]+)", line)
-            current = int(float(match.group(1)) // window) if match else None
-            if current is not None:
-                bins[current]["frames"] += 1
-            continue
-        if current is None or "=" not in line:
-            continue
-        key, value = line.strip().split("=", 1)
-        if key == "lavfi.idet.multiple.current_frame" and value in ("tff", "bff"):
-            bins[current]["interlaced"] += 1
-        elif key == "lavfi.idet.repeated.current_frame" and value != "neither":
-            bins[current]["repeated"] += 1
-        elif key == "lavfi.scd.score" and float(value) >= 10:
-            bins[current]["cuts"] += 1
-
-    expected_frames = window * 24_000 / 1_001
-    ranked = []
-    for index, stats in bins.items():
-        start = index * window
-        if start + window > duration or stats["frames"] < expected_frames * 0.8:
-            continue
-        cadence = max(0.0, stats["frames"] / expected_frames - 1) * 100
-        interlaced = stats["interlaced"] / stats["frames"] * 100
-        repeated = stats["repeated"] / stats["frames"] * 100
-        ranked.append(
-            {
-                "start_seconds": start,
-                "risk_score": cadence + interlaced + repeated * 0.25,
-                "cadence_excess_percent": cadence,
-                "interlaced_percent": interlaced,
-                "repeated_percent": repeated,
-                "scene_changes": stats["cuts"],
-                "coded_frames": stats["frames"],
-            }
-        )
-
-    selected = []
-    for candidate in sorted(ranked, key=lambda item: item["risk_score"], reverse=True):
-        if all(
-            abs(candidate["start_seconds"] - item["start_seconds"]) >= window * 3
-            for item in selected
-        ):
-            selected.append(candidate)
-            if len(selected) == count:
-                break
-    return selected
-
-
-def scan_file(path: Path, window: float, count: int) -> dict:
-    source_data = probe(path)
-    duration = float(source_data["format"]["duration"])
-    with tempfile.NamedTemporaryFile(
-        prefix="mend-scan-", suffix=".txt", delete=False
-    ) as file:
-        metadata_path = Path(file.name)
-    command = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-nostdin",
-        "-i",
-        str(path),
-        "-map",
-        "0:v:0",
-        "-an",
-        "-sn",
-        "-dn",
-        "-vf",
-        f"idet,scdet,metadata=mode=print:file={metadata_path}",
-        "-f",
-        "null",
-        "-",
-    ]
-    try:
-        result = subprocess.run(command, capture_output=True, check=False)
-        if result.returncode:
-            detail = result.stderr.decode(errors="replace").strip()
-            raise RuntimeError(f"scan failed for {path.name}: {detail}")
-        with metadata_path.open() as metadata:
-            candidates = rank_scan_metadata(metadata, duration, window, count)
-    finally:
-        metadata_path.unlink(missing_ok=True)
-    return {
-        "name": path.name,
-        "path": str(path),
-        "duration_seconds": duration,
-        "window_seconds": window,
-        "candidates": candidates,
-    }
-
-
-def scan(args: argparse.Namespace) -> int:
-    if args.window <= 0 or args.count <= 0:
-        raise ValueError("--window and --count must be positive")
-    source = resolve_source(args.source)
-    files = [select_title(source, args.title)] if args.title else source_files(source)
-    result = {"source": str(source), "files": []}
-    for path in files:
-        print(f"Scanning {path.name}...", file=sys.stderr, flush=True)
-        result["files"].append(scan_file(path, args.window, args.count))
-    if args.json:
-        print(json.dumps(result, indent=2))
-        return 0
-
-    for item in result["files"]:
-        print(item["name"])
-        print(
-            f"{'Start':>9} {'Score':>7} {'Cadence':>9} {'Interlace':>10}"
-            f" {'Repeated':>9} {'Cuts':>5}"
-        )
-        for candidate in item["candidates"]:
-            print(
-                f"{candidate['start_seconds']:>9.3f}"
-                f" {candidate['risk_score']:>7.1f}"
-                f" {candidate['cadence_excess_percent']:>8.1f}%"
-                f" {candidate['interlaced_percent']:>9.1f}%"
-                f" {candidate['repeated_percent']:>8.1f}%"
-                f" {candidate['scene_changes']:>5}"
-            )
-        print()
-    return 0
-
-
-def sample_output_dir(source: Path, title: Path, start: float) -> Path:
-    fingerprint = source.name if source.is_dir() else "files"
-    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "mend" / "samples" / fingerprint / title.stem / f"{start:09.3f}"
-
-
 def matroska_color_properties(metadata: dict) -> list[str]:
     properties = []
     for key, name, values in (
@@ -483,16 +230,7 @@ def matroska_color_properties(metadata: dict) -> list[str]:
     return properties
 
 
-def render_video(
-    title: Path,
-    method: str,
-    output: Path,
-    field_order: str,
-    sample_aspect_ratio: str,
-    color_metadata: dict,
-    frame_range: tuple[int, int] | None,
-    metadata: dict[str, object],
-) -> None:
+def render_handoff_video(title: Path, output: Path, color_metadata: dict) -> None:
     script = Path(__file__).with_name("temporal.vpy")
     vspipe = Path(sys.executable).with_name("vspipe")
     environment = os.environ.copy()
@@ -503,16 +241,11 @@ def render_video(
         str(vspipe),
         "--arg",
         f"source={title}",
-        "--arg",
-        f"method={method}",
-        "--arg",
-        f"field_order={field_order}",
+        "--container",
+        "y4m",
+        str(script),
+        "-",
     ]
-    if frame_range is not None:
-        pipe_command.extend(
-            ("--start", str(frame_range[0]), "--end", str(frame_range[1]))
-        )
-    pipe_command.extend(("--container", "y4m", str(script), "-"))
 
     properties = matroska_color_properties(color_metadata)
     color_options = []
@@ -526,9 +259,6 @@ def render_video(
         value = color_metadata.get(key)
         if value and value != "unknown":
             color_options.extend((option, value))
-    metadata_options = []
-    for key, value in metadata.items():
-        metadata_options.extend(("-metadata", f"{key}={value}"))
     ffmpeg_command = [
         "ffmpeg",
         "-hide_banner",
@@ -542,7 +272,7 @@ def render_video(
         "-map",
         "0:v:0",
         "-vf",
-        f"setsar={sample_aspect_ratio.replace(':', '/')}",
+        "setsar=1/1",
         *color_options,
         "-c:v",
         "ffv1",
@@ -550,7 +280,10 @@ def render_video(
         "3",
         "-g",
         "1",
-        *metadata_options,
+        "-metadata",
+        "mend_temporal_method=upscale",
+        "-metadata",
+        f"mend_profile={HANDOFF_PROFILE}",
         str(output),
     ]
 
@@ -569,7 +302,7 @@ def render_video(
     if first.returncode or second.returncode:
         output.unlink(missing_ok=True)
         detail = (first_stderr + second.stderr).decode(errors="replace").strip()
-        raise RuntimeError(f"render failed for {method}: {detail}")
+        raise RuntimeError(f"render failed: {detail}")
 
     if properties:
         metadata_result = subprocess.run(
@@ -580,36 +313,7 @@ def render_video(
         if metadata_result.returncode:
             output.unlink(missing_ok=True)
             detail = metadata_result.stderr.decode(errors="replace").strip()
-            raise RuntimeError(f"metadata update failed for {method}: {detail}")
-
-
-def render_sample(
-    title: Path,
-    method: str,
-    start: float,
-    duration: float,
-    output: Path,
-    field_order: str,
-    sample_aspect_ratio: str,
-    color_metadata: dict,
-) -> None:
-    fps_num = FILM_FPS_NUM if method == "upscale" else FPS_NUM
-    start_frame = round(start * fps_num / FPS_DEN)
-    frame_count = round(duration * fps_num / FPS_DEN)
-    render_video(
-        title,
-        method,
-        output,
-        field_order,
-        sample_aspect_ratio,
-        color_metadata,
-        (start_frame, start_frame + frame_count - 1),
-        {
-            "mend_temporal_method": method,
-            "mend_source": title,
-            "mend_start_seconds": start,
-        },
-    )
+            raise RuntimeError(f"metadata update failed: {detail}")
 
 
 def matroska_duration_seconds(value: str) -> float:
@@ -731,28 +435,17 @@ def validate_handoff_title(source: Path, output: Path) -> None:
         )
 
 
-def render_handoff_title(source: Path, output: Path, source_fingerprint: str) -> None:
-    source_data = probe(source)
-    stream = source_data["streams"][0]
+def render_handoff_title(source: Path, output: Path) -> None:
+    source_data = probe_container(source)
+    stream = next(
+        item for item in source_data["streams"] if item.get("codec_type") == "video"
+    )
     video_temp = output.parent / f".{output.stem}.video.mkv"
     mux_temp = output.parent / f".{output.stem}.mux.mkv"
     video_temp.unlink(missing_ok=True)
     mux_temp.unlink(missing_ok=True)
     try:
-        render_video(
-            source,
-            "upscale",
-            video_temp,
-            "tff",
-            "1:1",
-            stream,
-            None,
-            {
-                "mend_temporal_method": "upscale",
-                "mend_profile": HANDOFF_PROFILE,
-                "mend_source_fingerprint": source_fingerprint,
-            },
-        )
+        render_handoff_video(source, video_temp, stream)
         result = subprocess.run(
             [
                 "mkvmerge",
@@ -846,7 +539,7 @@ def publish_handoff(source: Path) -> tuple[str, Path]:
             f"Phase {index}/{len(source_paths)} - Restoring {source_file.name}",
             flush=True,
         )
-        render_handoff_title(source_file, output, metadata["fingerprint"])
+        render_handoff_title(source_file, output)
 
     outputs = [work / source_file.name for source_file in source_paths]
     if {path.name for path in outputs} != {path.name for path in source_files(work)}:
@@ -864,6 +557,14 @@ def publish_handoff(source: Path) -> tuple[str, Path]:
         raise RuntimeError(f"publish derived cache entry: {error}") from error
     print(f"Published Mend cache entry: {destination}", flush=True)
     return derived_fingerprint, destination
+
+
+def setup(_args: argparse.Namespace) -> int:
+    environment = os.environ.copy()
+    environment["MEND_ENV"] = sys.prefix
+    script = Path(__file__).with_name("bootstrap-plugins")
+    subprocess.run(["sh", str(script)], check=True, env=environment)
+    return 0
 
 
 def handoff(args: argparse.Namespace) -> int:
@@ -887,186 +588,25 @@ def handoff(args: argparse.Namespace) -> int:
     return 0
 
 
-def sample(args: argparse.Namespace) -> int:
-    source = resolve_source(args.source)
-    title = select_title(source, args.title)
-    if args.start < 0 or args.duration <= 0:
-        raise ValueError("--start must be non-negative and --duration must be positive")
-    source_data = probe(title)
-    source_duration = float(source_data["format"]["duration"])
-    stream = source_data["streams"][0]
-    sample_aspect_ratio = stream.get("sample_aspect_ratio")
-    if not sample_aspect_ratio or sample_aspect_ratio == "N/A":
-        sample_aspect_ratio = "1:1"
-    if args.start + args.duration > source_duration:
-        raise ValueError("sample extends past the source duration")
-
-    method = getattr(args, "method", None)
-    if method is None:
-        model = getattr(args, "model", "denoise")
-        method = {
-            "denoise": "ai-denoise",
-            "denoise-long": "ai-denoise45",
-            "compress1": "ai-compress4",
-            "compress1-long": "ai-compress4-45",
-            "compress2": "ai-compress5",
-            "compress2-long": "ai-compress5-45",
-            "compress3": "ai-compress6",
-            "compress3-long": "ai-compress6-45",
-            "cugan-conservative": "ai-cugan-1",
-            "cugan-no-denoise": "ai-cugan0",
-            "cugan-denoise3x": "ai-cugan3",
-        }[model]
-    methods = METHODS if method == "all" else (method,)
-    output_dir = (
-        Path(args.output).expanduser()
-        if args.output
-        else sample_output_dir(source, title, args.start)
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for method in methods:
-        output = output_dir / f"{method}.mkv"
-        print(f"Rendering {method}: {output}", flush=True)
-        render_sample(
-            title,
-            method,
-            args.start,
-            args.duration,
-            output,
-            args.field_order,
-            "1:1" if method in SQUARE_PIXEL_METHODS else sample_aspect_ratio,
-            stream,
-        )
-    return 0
-
-
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
-        prog="mend", description="Video restoration research tools"
+        prog="mend", description="Restore supported NTSC animation DVDs for Spindle"
     )
     commands = result.add_subparsers(dest="command", required=True)
 
-    analyze_parser = commands.add_parser(
-        "analyze", help="inspect a file or Spindle rip-cache entry"
+    setup_parser = commands.add_parser(
+        "setup", help="install and verify Mend's native VapourSynth plugins"
     )
-    analyze_parser.add_argument(
-        "source", help="MKV path, directory, or Spindle fingerprint prefix"
-    )
-    analyze_parser.add_argument(
-        "--json", action="store_true", help="emit machine-readable JSON"
-    )
-    analyze_parser.set_defaults(run=analyze)
+    setup_parser.set_defaults(run=setup)
 
     handoff_parser = commands.add_parser(
         "handoff",
-        help="restore a Simpsons DVD cache entry and queue it in Spindle",
+        help="restore a supported DVD cache entry and queue it in Spindle",
     )
     handoff_parser.add_argument(
         "source", help="Spindle rip-cache directory or fingerprint prefix"
     )
     handoff_parser.set_defaults(run=handoff)
-
-    scan_parser = commands.add_parser(
-        "scan", help="rank temporal-problem windows for comparison"
-    )
-    scan_parser.add_argument(
-        "source", help="MKV path, directory, or Spindle fingerprint prefix"
-    )
-    scan_parser.add_argument("--title", help="scan only this MKV filename")
-    scan_parser.add_argument(
-        "--window", type=float, default=10.0, help="window duration in seconds"
-    )
-    scan_parser.add_argument(
-        "--count", type=int, default=6, help="candidate windows per title"
-    )
-    scan_parser.add_argument(
-        "--json", action="store_true", help="emit machine-readable JSON"
-    )
-    scan_parser.set_defaults(run=scan)
-
-    sample_options = argparse.ArgumentParser(add_help=False)
-    sample_options.add_argument(
-        "source", help="MKV path, directory, or Spindle fingerprint prefix"
-    )
-    sample_options.add_argument(
-        "--title", help="MKV filename when source is a directory"
-    )
-    sample_options.add_argument(
-        "--start", type=float, required=True, help="start time in seconds"
-    )
-    sample_options.add_argument(
-        "--duration", type=float, default=10.0, help="duration in seconds (default: 10)"
-    )
-    sample_options.add_argument("--field-order", choices=("tff", "bff"), default="tff")
-    sample_options.add_argument("--output", help="output directory")
-
-    sample_parser = commands.add_parser(
-        "sample",
-        parents=[sample_options],
-        help="render separate lossless temporal-restoration samples",
-    )
-    sample_parser.add_argument("--method", choices=("all",) + METHODS, default="all")
-    sample_parser.set_defaults(run=sample)
-
-    compare_parser = commands.add_parser(
-        "compare",
-        parents=[sample_options],
-        help="render one synchronized, labeled temporal comparison",
-    )
-    compare_parser.set_defaults(method="comparison", run=sample)
-
-    cleanup_parser = commands.add_parser(
-        "cleanup",
-        parents=[sample_options],
-        help="render one synchronized, labeled cleanup comparison",
-    )
-    cleanup_parser.set_defaults(method="cleanup", run=sample)
-
-    restore_parser = commands.add_parser(
-        "restore",
-        parents=[sample_options],
-        help="render the locked native-resolution restoration",
-    )
-    restore_parser.set_defaults(method="restore", run=sample)
-
-    upscale_parser = commands.add_parser(
-        "upscale",
-        parents=[sample_options],
-        help="render the locked 1440x1080 upscale",
-    )
-    upscale_parser.set_defaults(method="upscale", run=sample)
-
-    finishing_parser = commands.add_parser(
-        "finishing",
-        parents=[sample_options],
-        help="compare line repair, line finishing, and mild debanding",
-    )
-    finishing_parser.set_defaults(method="finishing", run=sample)
-
-    ai_parser = commands.add_parser(
-        "ai",
-        parents=[sample_options],
-        help="render a BasicVSR++ temporal restoration experiment",
-    )
-    ai_parser.add_argument(
-        "--model",
-        choices=(
-            "denoise",
-            "denoise-long",
-            "compress1",
-            "compress1-long",
-            "compress2",
-            "compress2-long",
-            "compress3",
-            "compress3-long",
-            "cugan-conservative",
-            "cugan-no-denoise",
-            "cugan-denoise3x",
-        ),
-        default="denoise",
-        help="temporal restoration model (default: denoise)",
-    )
-    ai_parser.set_defaults(run=sample)
     return result
 
 
