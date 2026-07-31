@@ -9,6 +9,7 @@ import sys
 from datetime import UTC, datetime
 from fractions import Fraction
 from pathlib import Path
+from time import monotonic
 
 FILM_FPS_NUM = 24_000
 FPS_DEN = 1_001
@@ -17,6 +18,24 @@ HANDOFF_PROFILE = "simpsons-dvd-v1"
 SPINDLE_CACHE_VERSION = 1
 SPINDLE_METADATA_NAME = "spindle.cache.json"
 TITLE_FILE_PATTERN = re.compile(r"(?i)(?:^|[^a-z0-9])(?:title_)?t(\d{2,3})")
+
+
+def log_status(message: str) -> None:
+    now = datetime.now().astimezone()
+    hour = now.strftime("%I").lstrip("0") or "12"
+    timestamp = f"{now:%b} {now.day} {hour}:{now:%M:%S %p}"
+    print(f"[{timestamp}] {message}", flush=True)
+
+
+def format_elapsed(seconds: float) -> str:
+    total = max(0, round(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
 
 
 def spindle_cache_dir() -> Path:
@@ -237,15 +256,19 @@ def render_handoff_video(title: Path, output: Path, color_metadata: dict) -> Non
     nvidia_icd = Path("/usr/share/vulkan/icd.d/nvidia_icd.json")
     if nvidia_icd.is_file():
         environment.setdefault("VK_ICD_FILENAMES", str(nvidia_icd))
-    pipe_command = [
-        str(vspipe),
-        "--arg",
-        f"source={title}",
-        "--container",
-        "y4m",
-        str(script),
-        "-",
-    ]
+    pipe_command = [str(vspipe)]
+    if sys.stderr.isatty():
+        pipe_command.append("--progress")
+    pipe_command.extend(
+        [
+            "--arg",
+            f"source={title}",
+            "--container",
+            "y4m",
+            str(script),
+            "-",
+        ]
+    )
 
     properties = matroska_color_properties(color_metadata)
     color_options = []
@@ -290,7 +313,6 @@ def render_handoff_video(title: Path, output: Path, color_metadata: dict) -> Non
     first = subprocess.Popen(
         pipe_command,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
         env=environment,
     )
     assert first.stdout is not None
@@ -298,11 +320,18 @@ def render_handoff_video(title: Path, output: Path, color_metadata: dict) -> Non
         ffmpeg_command, stdin=first.stdout, capture_output=True, check=False
     )
     first.stdout.close()
-    _, first_stderr = first.communicate()
+    first.wait()
     if first.returncode or second.returncode:
         output.unlink(missing_ok=True)
-        detail = (first_stderr + second.stderr).decode(errors="replace").strip()
-        raise RuntimeError(f"render failed: {detail}")
+        details = []
+        if first.returncode:
+            details.append(f"vspipe exited with status {first.returncode}")
+        ffmpeg_error = second.stderr.decode(errors="replace").strip()
+        if ffmpeg_error:
+            details.append(ffmpeg_error)
+        elif second.returncode:
+            details.append(f"ffmpeg exited with status {second.returncode}")
+        raise RuntimeError(f"render failed: {'; '.join(details)}")
 
     if properties:
         metadata_result = subprocess.run(
@@ -516,31 +545,42 @@ def publish_handoff(source: Path) -> tuple[str, Path]:
     root = spindle_cache_dir().resolve()
     destination = root / derived_fingerprint
     if destination.exists():
+        log_status(f"Validating existing Mend cache entry: {destination}")
         validate_published_handoff(
             destination, metadata, source_paths, derived_fingerprint
         )
-        print(f"Using existing Mend cache entry: {destination}", flush=True)
+        log_status(f"Using existing Mend cache entry: {destination}")
         return derived_fingerprint, destination
 
     work = handoff_work_dir(derived_fingerprint)
     work.mkdir(parents=True, exist_ok=True)
+    total = len(source_paths)
+    handoff_started = monotonic()
+    log_status(f"Restoring {total} titles from {metadata['disc_title']}")
     for index, source_file in enumerate(source_paths, 1):
         output = work / source_file.name
         (work / f".{source_file.stem}.video.mkv").unlink(missing_ok=True)
         (work / f".{source_file.stem}.mux.mkv").unlink(missing_ok=True)
+        title_started = monotonic()
         if output.exists():
+            log_status(f"[{index}/{total}] Validating completed {output.name}")
             validate_handoff_title(source_file, output)
-            print(
-                f"Phase {index}/{len(source_paths)} - Reusing {output.name}",
-                flush=True,
+            log_status(
+                f"[{index}/{total}] Reused {output.name} "
+                f"(validated in {format_elapsed(monotonic() - title_started)})"
             )
             continue
-        print(
-            f"Phase {index}/{len(source_paths)} - Restoring {source_file.name}",
-            flush=True,
-        )
+        log_status(f"[{index}/{total}] Restoring {source_file.name}")
         render_handoff_title(source_file, output)
+        log_status(
+            f"[{index}/{total}] Restored {source_file.name} "
+            f"in {format_elapsed(monotonic() - title_started)}"
+        )
 
+    log_status(
+        f"Restoration complete: {total} titles ready in "
+        f"{format_elapsed(monotonic() - handoff_started)}"
+    )
     outputs = [work / source_file.name for source_file in source_paths]
     if {path.name for path in outputs} != {path.name for path in source_files(work)}:
         raise RuntimeError(f"handoff work directory has unexpected MKVs: {work}")
@@ -555,7 +595,7 @@ def publish_handoff(source: Path) -> tuple[str, Path]:
         work.rename(destination)
     except OSError as error:
         raise RuntimeError(f"publish derived cache entry: {error}") from error
-    print(f"Published Mend cache entry: {destination}", flush=True)
+    log_status(f"Published Mend cache entry: {destination}")
     return derived_fingerprint, destination
 
 
@@ -576,7 +616,7 @@ def handoff(args: argparse.Namespace) -> int:
             f"Spindle is not installed; process the published entry manually: "
             f"spindle cache process {derived_fingerprint}"
         )
-    print(f"Handing off to Spindle: {derived_fingerprint}", flush=True)
+    log_status(f"Handing off to Spindle: {derived_fingerprint}")
     result = subprocess.run(
         [spindle, "cache", "process", derived_fingerprint], check=False
     )

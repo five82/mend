@@ -2,11 +2,52 @@ import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from mend import cli
+
+
+class StatusOutputTest(unittest.TestCase):
+    def test_prints_human_readable_local_timestamp(self) -> None:
+        output = StringIO()
+        with (
+            patch("mend.cli.datetime") as clock,
+            redirect_stdout(output),
+        ):
+            clock.now.return_value.astimezone.return_value = datetime(
+                2026, 7, 31, 18, 5, 1, tzinfo=UTC
+            )
+            cli.log_status("Restoring episode.mkv")
+
+        self.assertEqual(
+            output.getvalue(),
+            "[Jul 31 6:05:01 PM] Restoring episode.mkv\n",
+        )
+
+    def test_formats_elapsed_time(self) -> None:
+        self.assertEqual(cli.format_elapsed(8.6), "9s")
+        self.assertEqual(cli.format_elapsed(65), "1m 5s")
+        self.assertEqual(cli.format_elapsed(3661), "1h 1m 1s")
+
+    def test_enables_vspipe_progress_in_a_terminal(self) -> None:
+        process = MagicMock(returncode=0)
+        process.stdout = MagicMock()
+        with (
+            patch("mend.cli.sys.stderr.isatty", return_value=True),
+            patch("mend.cli.subprocess.Popen", return_value=process) as popen,
+            patch(
+                "mend.cli.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stderr=b""),
+            ),
+        ):
+            cli.render_handoff_video(Path("source.mkv"), Path("output.mkv"), {})
+
+        self.assertIn("--progress", popen.call_args.args[0])
 
 
 class ResolveSourceTest(unittest.TestCase):

@@ -53,6 +53,8 @@ Mend:
 
 The locked profile restores film cadence, removes the 10-pixel ragged mastering edge from each horizontal side, and reconstructs the image with Real-CUGAN Pro denoise3x through Vulkan. The vertical frame is retained.
 
+Each title reports timestamped start and completion messages with elapsed time. In an interactive terminal, VSPipe also displays live frame progress while the restoration is running.
+
 Interrupted work is kept under `~/.cache/mend/handoffs/`. Run the same command again to validate and reuse completed titles. Published derivatives remain ordinary Spindle rip-cache entries and are managed by Spindle's normal cache size and pruning policy.
 
 ## Development
