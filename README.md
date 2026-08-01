@@ -37,11 +37,13 @@ mend setup
 
 ## Restore and hand off a disc
 
-Pass a unique prefix of the source entry's Spindle cache fingerprint:
+Pass one or more unique prefixes of source entries' Spindle cache fingerprints:
 
 ```bash
-mend handoff FINGERPRINT
+mend handoff FINGERPRINT [FINGERPRINT ...]
 ```
+
+When multiple fingerprints are supplied, Mend restores and hands off each entry in order before starting the next one.
 
 Mend:
 

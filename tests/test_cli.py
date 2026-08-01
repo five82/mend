@@ -77,9 +77,18 @@ class ParserTest(unittest.TestCase):
         self.assertIs(args.run, cli.setup)
 
     def test_handoff_selects_spindle_publication(self) -> None:
-        args = cli.parser().parse_args(["handoff", "fingerprint"])
-        self.assertEqual(args.source, "fingerprint")
+        args = cli.parser().parse_args(
+            ["handoff", "first-fingerprint", "second-fingerprint"]
+        )
+        self.assertEqual(args.sources, ["first-fingerprint", "second-fingerprint"])
         self.assertIs(args.run, cli.handoff)
+
+    def test_handoff_help_explicitly_supports_multiple_entries(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(SystemExit):
+            cli.parser().parse_args(["handoff", "--help"])
+
+        self.assertIn("one or more DVD cache entries", output.getvalue())
 
 
 class SetupTest(unittest.TestCase):
@@ -315,9 +324,44 @@ class HandoffTest(unittest.TestCase):
                 return_value=SimpleNamespace(returncode=0),
             ) as run,
         ):
-            self.assertEqual(cli.handoff(SimpleNamespace(source="source")), 0)
+            self.assertEqual(cli.handoff(SimpleNamespace(sources=["source"])), 0)
         run.assert_called_once_with(
             ["/bin/spindle", "cache", "process", derived], check=False
+        )
+
+    def test_handoff_processes_sources_back_to_back(self) -> None:
+        first_derived = "b" * 64
+        second_derived = "c" * 64
+        events = []
+
+        def publish(source):
+            events.append(("publish", source.name))
+            if source.name == "first":
+                return first_derived, Path("first-derived")
+            return second_derived, Path("second-derived")
+
+        def process(command, check):
+            events.append(("process", command[-1]))
+            return SimpleNamespace(returncode=0)
+
+        with (
+            patch("mend.cli.resolve_source", side_effect=lambda value: Path(value)),
+            patch("mend.cli.publish_handoff", side_effect=publish),
+            patch("mend.cli.shutil.which", return_value="/bin/spindle"),
+            patch("mend.cli.subprocess.run", side_effect=process),
+        ):
+            self.assertEqual(
+                cli.handoff(SimpleNamespace(sources=["first", "second"])), 0
+            )
+
+        self.assertEqual(
+            events,
+            [
+                ("publish", "first"),
+                ("process", first_derived),
+                ("publish", "second"),
+                ("process", second_derived),
+            ],
         )
 
 

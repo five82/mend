@@ -608,23 +608,24 @@ def setup(_args: argparse.Namespace) -> int:
 
 
 def handoff(args: argparse.Namespace) -> int:
-    source = resolve_source(args.source)
-    derived_fingerprint, destination = publish_handoff(source)
-    spindle = shutil.which("spindle")
-    if spindle is None:
-        raise RuntimeError(
-            f"Spindle is not installed; process the published entry manually: "
-            f"spindle cache process {derived_fingerprint}"
+    for value in args.sources:
+        source = resolve_source(value)
+        derived_fingerprint, destination = publish_handoff(source)
+        spindle = shutil.which("spindle")
+        if spindle is None:
+            raise RuntimeError(
+                f"Spindle is not installed; process the published entry manually: "
+                f"spindle cache process {derived_fingerprint}"
+            )
+        log_status(f"Handing off to Spindle: {derived_fingerprint}")
+        result = subprocess.run(
+            [spindle, "cache", "process", derived_fingerprint], check=False
         )
-    log_status(f"Handing off to Spindle: {derived_fingerprint}")
-    result = subprocess.run(
-        [spindle, "cache", "process", derived_fingerprint], check=False
-    )
-    if result.returncode:
-        raise RuntimeError(
-            f"Spindle did not queue {derived_fingerprint}; the derivative remains at "
-            f"{destination}"
-        )
+        if result.returncode:
+            raise RuntimeError(
+                f"Spindle did not queue {derived_fingerprint}; the derivative remains "
+                f"at {destination}"
+            )
     return 0
 
 
@@ -641,10 +642,17 @@ def parser() -> argparse.ArgumentParser:
 
     handoff_parser = commands.add_parser(
         "handoff",
-        help="restore a supported DVD cache entry and queue it in Spindle",
+        help="restore one or more DVD cache entries and queue them in Spindle",
+        description="Restore one or more DVD cache entries in the order given.",
     )
     handoff_parser.add_argument(
-        "source", help="Spindle rip-cache directory or fingerprint prefix"
+        "sources",
+        nargs="+",
+        metavar="SOURCE",
+        help=(
+            "Spindle rip-cache directories or fingerprint prefixes; multiple "
+            "entries are processed in order"
+        ),
     )
     handoff_parser.set_defaults(run=handoff)
     return result
