@@ -28,12 +28,15 @@ mend setup
 
 `uv tool install` creates an isolated Python environment and exposes the `mend` command. `mend setup` registers that environment as the active VapourSynth runtime, installs BestSource, Bwdif, and TIVTC into it, then builds and installs the pinned Real-CUGAN Vulkan plugin and models.
 
-To reinstall after updating the checkout:
+To deploy after updating the checkout:
 
 ```bash
-uv tool install --force .
-mend setup
+./deploy.sh
 ```
+
+The deploy script force-installs the working tree into Mend's isolated uv tool
+environment, sets up its native VapourSynth plugins, and verifies the installed
+command.
 
 ## Restore and hand off a disc
 
