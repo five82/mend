@@ -133,6 +133,7 @@ class HandoffTest(unittest.TestCase):
             source.mkdir(parents=True)
             (source / "Episode_t01.mkv").touch()
             (source / "Episode_t00.mkv").touch()
+            (source / "unrelated.mkv").touch()
             metadata = {
                 "version": 1,
                 "fingerprint": "a" * 64,
